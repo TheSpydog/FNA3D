@@ -931,7 +931,7 @@ static SurfaceFormatMapping XNAToVK_SurfaceFormat[] =
 {
 	/* SurfaceFormat.Color */
 	{
-		VK_FORMAT_B8G8R8A8_UNORM
+		VK_FORMAT_R8G8B8A8_UNORM
 	},
 	/* SurfaceFormat.Bgr565 */
 	{
@@ -6548,12 +6548,7 @@ static uint8_t ChooseSwapSurfaceFormat(
 		}
 	}
 
-	SDL_LogError(
-		SDL_LOG_CATEGORY_APPLICATION,
-		"%s\n",
-		"Desired surface format is unavailable."
-	);
-
+	FNA3D_LogError("Desired surface format is unavailable.");
 	return 0;
 }
 
@@ -7139,6 +7134,12 @@ static uint8_t CreateSwapChain(
 	SurfaceFormatMapping surfaceFormatMapping = XNAToVK_SurfaceFormat[
 		presentationParameters->backBufferFormat
 	];
+
+	if (presentationParameters->backBufferFormat == FNA3D_SURFACEFORMAT_COLOR)
+	{
+		/* FIXME: Is there a better way to handle this...? */
+		surfaceFormatMapping.formatColor = VK_FORMAT_B8G8R8A8_UNORM;
+	}
 
 	if (!QuerySwapChainSupport(
 		renderer,
