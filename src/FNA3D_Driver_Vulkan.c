@@ -869,6 +869,11 @@ static void SubmitPipelineBarrier(
 	FNAVulkanRenderer *renderer
 );
 
+static void CreateFauxBackbuffer(
+	FNAVulkanRenderer *renderer,
+	FNA3D_PresentationParameters *presentationParameters
+);
+
 /* static vars */
 
 static PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = NULL;
@@ -2396,12 +2401,6 @@ void VULKAN_DestroyDevice(FNA3D_Device *device)
 		);
 	}
 
-	renderer->vkDestroyFramebuffer(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferFramebuffer,
-		NULL
-	);
-
 	for (i = 0; i < hmlenu(renderer->pipelineHashMap); i++)
 	{
 		renderer->vkDestroyPipeline(
@@ -2485,63 +2484,6 @@ void VULKAN_DestroyDevice(FNA3D_Device *device)
 			NULL
 		);
 	}
-
-	renderer->vkDestroyRenderPass(
-		renderer->logicalDevice,
-		renderer->backbufferRenderPass,
-		NULL
-	);
-
-	renderer->vkDestroyImageView(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferColorImageData.view,
-		NULL
-	);
-
-	renderer->vkDestroyImage(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferColorImageData.image,
-		NULL
-	);
-
-	renderer->vkFreeMemory(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferColorImageData.memory,
-		NULL
-	);
-
-	renderer->vkDestroyImageView(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferDepthStencil.handle.view,
-		NULL
-	);
-
-	renderer->vkDestroyImage(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferDepthStencil.handle.image,
-		NULL
-	);
-
-	renderer->vkFreeMemory(
-		renderer->logicalDevice,
-		renderer->fauxBackbufferDepthStencil.handle.memory,
-		NULL
-	);
-
-	for (i = 0; i < renderer->swapChainImageCount; i++)
-	{
-		renderer->vkDestroyImageView(
-			renderer->logicalDevice,
-			renderer->swapChainImages[i].view,
-			NULL
-		);
-	}
-
-	renderer->vkDestroySwapchainKHR(
-		renderer->logicalDevice,
-		renderer->swapChain,
-		NULL
-	);
 
 	renderer->vkDestroyDevice(renderer->logicalDevice, NULL);
 
@@ -5130,11 +5072,79 @@ void VULKAN_ResolveTarget(
 
 /* Backbuffer Functions */
 
+static void DestroyFauxBackbuffer(FNAVulkanRenderer *renderer)
+{
+	uint32_t i;
+
+	renderer->vkDestroyFramebuffer(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferFramebuffer,
+		NULL
+	);
+
+	renderer->vkDestroyRenderPass(
+		renderer->logicalDevice,
+		renderer->backbufferRenderPass,
+		NULL
+	);
+
+	renderer->vkDestroyImageView(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferColorImageData.view,
+		NULL
+	);
+
+	renderer->vkDestroyImage(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferColorImageData.image,
+		NULL
+	);
+
+	renderer->vkFreeMemory(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferColorImageData.memory,
+		NULL
+	);
+
+	renderer->vkDestroyImageView(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferDepthStencil.handle.view,
+		NULL
+	);
+
+	renderer->vkDestroyImage(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferDepthStencil.handle.image,
+		NULL
+	);
+
+	renderer->vkFreeMemory(
+		renderer->logicalDevice,
+		renderer->fauxBackbufferDepthStencil.handle.memory,
+		NULL
+	);
+
+	for (i = 0; i < renderer->swapChainImageCount; i++)
+	{
+		renderer->vkDestroyImageView(
+			renderer->logicalDevice,
+			renderer->swapChainImages[i].view,
+			NULL
+		);
+	}
+}
+
 void VULKAN_ResetBackbuffer(
 	FNA3D_Renderer *driverData,
 	FNA3D_PresentationParameters *presentationParameters
 ) {
-	/* TODO */
+	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
+
+	DestroyFauxBackbuffer(renderer);
+	CreateFauxBackbuffer(
+		renderer,
+		presentationParameters
+	);
 }
 
 void VULKAN_ReadBackbuffer(
@@ -5261,7 +5271,7 @@ void VULKAN_SetTextureData2D(
 		&stagingData
 	);
 
-	SDL_memcpy(stagingData, data, stagingBuffer->size);
+	SDL_memcpy(stagingData, data, dataLength);
 
 	renderer->vkUnmapMemory(
 		renderer->logicalDevice,
@@ -7223,6 +7233,7 @@ static uint8_t CreateSwapChain(
 
 	for (i = 0; i < swapChainImageCount; i++)
 	{
+		SDL_zero(createInfo);
 		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.image = swapChainImages[i];
 		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
