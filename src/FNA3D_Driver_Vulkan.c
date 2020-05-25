@@ -7129,7 +7129,7 @@ static uint8_t CreateSwapChain(
 	uint32_t imageCount, swapChainImageCount, i;
 	VkSwapchainCreateInfoKHR swapChainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 	VkImage *swapChainImages;
-	VkImageViewCreateInfo createInfo;
+	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	VkImageView swapChainImageView;
 	SurfaceFormatMapping surfaceFormatMapping = XNAToVK_SurfaceFormat[
 		presentationParameters->backBufferFormat
@@ -7234,8 +7234,6 @@ static uint8_t CreateSwapChain(
 
 	for (i = 0; i < swapChainImageCount; i++)
 	{
-		SDL_zero(createInfo);
-		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.image = swapChainImages[i];
 		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		createInfo.format = surfaceFormat.format;
