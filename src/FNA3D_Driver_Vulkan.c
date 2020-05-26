@@ -7131,15 +7131,7 @@ static uint8_t CreateSwapChain(
 	VkImage *swapChainImages;
 	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	VkImageView swapChainImageView;
-	SurfaceFormatMapping surfaceFormatMapping = XNAToVK_SurfaceFormat[
-		presentationParameters->backBufferFormat
-	];
-
-	if (presentationParameters->backBufferFormat == FNA3D_SURFACEFORMAT_COLOR)
-	{
-		/* FIXME: Is there a better way to handle this...? */
-		surfaceFormatMapping.formatColor = VK_FORMAT_B8G8R8A8_UNORM;
-	}
+	SurfaceFormatMapping surfaceFormatMapping = { VK_FORMAT_B8G8R8A8_UNORM };
 
 	if (!QuerySwapChainSupport(
 		renderer,
