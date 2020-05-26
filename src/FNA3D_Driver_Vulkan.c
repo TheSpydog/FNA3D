@@ -869,7 +869,7 @@ static void SubmitPipelineBarrier(
 	FNAVulkanRenderer *renderer
 );
 
-static void CreateFauxBackbuffer(
+static uint8_t CreateFauxBackbuffer(
 	FNAVulkanRenderer *renderer,
 	FNA3D_PresentationParameters *presentationParameters
 );
