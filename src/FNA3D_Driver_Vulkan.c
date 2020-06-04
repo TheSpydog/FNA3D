@@ -483,6 +483,7 @@ typedef struct FNAVulkanRenderer
 	/* Capabilities */
 	uint8_t supportsDxt1;
 	uint8_t supportsS3tc;
+	uint8_t supportsDebugUtils;
 	uint8_t debugMode;
 
 	#define VULKAN_INSTANCE_FUNCTION(ext, ret, func, params) \
@@ -3449,7 +3450,7 @@ static VkPipeline FetchPipeline(
 	depthStencilStateInfo.minDepthBounds = 0; /* unused */
 	depthStencilStateInfo.maxDepthBounds = 0; /* unused */
 
-	dynamicStateInfo.dynamicStateCount = sizeof(dynamicStates)/sizeof(dynamicStates[0]);
+	dynamicStateInfo.dynamicStateCount = SDL_arraysize(dynamicStates);
 	dynamicStateInfo.pDynamicStates = dynamicStates;
 
 	MOJOSHADER_vkGetBoundShaders(&vertShader, &fragShader);
@@ -6464,7 +6465,19 @@ int32_t VULKAN_GetMaxMultiSampleCount(
 
 void VULKAN_SetStringMarker(FNA3D_Renderer *driverData, const char *text)
 {
-	/* TODO */
+	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
+	VkDebugUtilsLabelEXT labelInfo = {
+		VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT
+	};
+
+	if (renderer->supportsDebugUtils)
+	{
+		labelInfo.pLabelName = text;
+		renderer->vkCmdInsertDebugUtilsLabelEXT(
+			renderer->commandBuffers[renderer->commandBufferCount - 1],
+			&labelInfo
+		);
+	}
 }
 
 /* Function Loading */
@@ -6513,42 +6526,53 @@ static void LoadDeviceFunctions(
 	#undef VULKAN_DEVICE_FUNCTION
 }
 
+static inline uint8_t SupportsExtension(
+	const char *ext,
+	VkExtensionProperties *availableExtensions,
+	uint32_t numAvailableExtensions
+) {
+	int32_t i;
+	for (i = 0; i < numAvailableExtensions; i += 1)
+	{
+		if (SDL_strcmp(ext, availableExtensions[i].extensionName) == 0)
+		{
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static uint8_t CheckInstanceExtensionSupport(
-	const char** requiredExtensions,
-	uint32_t requiredExtensionsLength
+	const char **requiredExtensions,
+	uint32_t requiredExtensionsLength,
+	uint8_t *supportsDebugUtils
 ) {
 	uint32_t extensionCount, i, j;
 	VkExtensionProperties *availableExtensions;
-	uint8_t extensionFound;
+	uint8_t allExtensionsSupported = 1;
 
 	vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, NULL);
-	availableExtensions = (VkExtensionProperties*) SDL_malloc(
-		extensionCount * sizeof(VkExtensionProperties)
-	);
+	availableExtensions = SDL_stack_alloc(VkExtensionProperties, extensionCount);
 	vkEnumerateInstanceExtensionProperties(NULL, &extensionCount, availableExtensions);
 
 	for (i = 0; i < requiredExtensionsLength; i++)
 	{
-		extensionFound = 0;
-
-		for (j = 0; j < extensionCount; j++)
+		if (!SupportsExtension(requiredExtensions[i], availableExtensions, extensionCount))
 		{
-			if (SDL_strcmp(requiredExtensions[i], availableExtensions[j].extensionName) == 0)
-			{
-				extensionFound = 1;
-				break;
-			}
-		}
-
-		if (!extensionFound)
-		{
-			SDL_free(availableExtensions);
-			return 0;
+			allExtensionsSupported = 0;
+			break;
 		}
 	}
 
-	SDL_free(availableExtensions);
-	return 1;
+	/* This is optional, but nice to have! */
+	*supportsDebugUtils = SupportsExtension(
+		VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+		availableExtensions,
+		extensionCount
+	);
+
+	SDL_stack_free(availableExtensions);
+	return allExtensionsSupported;
 }
 
 static uint8_t CheckDeviceExtensionSupport(
@@ -6559,36 +6583,23 @@ static uint8_t CheckDeviceExtensionSupport(
 ) {
 	uint32_t extensionCount, i, j;
 	VkExtensionProperties *availableExtensions;
-	uint8_t extensionFound;
+	uint8_t allExtensionsSupported = 1;
 
 	renderer->vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &extensionCount, NULL);
-	availableExtensions = (VkExtensionProperties*) SDL_malloc(
-		extensionCount * sizeof(VkExtensionProperties)
-	);
+	availableExtensions = SDL_stack_alloc(VkExtensionProperties, extensionCount);
 	renderer->vkEnumerateDeviceExtensionProperties(physicalDevice, NULL, &extensionCount, availableExtensions);
 
 	for (i = 0; i < requiredExtensionsLength; i++)
 	{
-		extensionFound = 0;
-
-		for (j = 0; j < extensionCount; j++)
+		if (!SupportsExtension(requiredExtensions[i], availableExtensions, extensionCount))
 		{
-			if (SDL_strcmp(requiredExtensions[i], availableExtensions[j].extensionName) == 0)
-			{
-				extensionFound = 1;
-				break;
-			}
-		}
-
-		if (!extensionFound)
-		{
-			SDL_free(availableExtensions);
-			return 0;
+			allExtensionsSupported = 0;
+			break;
 		}
 	}
 
-	SDL_free(availableExtensions);
-	return 1;
+	SDL_stack_free(availableExtensions);
+	return allExtensionsSupported;
 }
 
 static uint8_t QuerySwapChainSupport(
@@ -6689,8 +6700,12 @@ static uint8_t IsDeviceSuitable(
 	queueFamilyIndices->presentFamily = UINT32_MAX;
 	*isIdeal = 0;
 
-	if (!CheckDeviceExtensionSupport(renderer, physicalDevice, requiredExtensionNames, requiredExtensionNamesLength))
-	{
+	if (!CheckDeviceExtensionSupport(
+		renderer,
+		physicalDevice,
+		requiredExtensionNames,
+		requiredExtensionNamesLength
+	)) {
 		return 0;
 	}
 
@@ -6711,9 +6726,7 @@ static uint8_t IsDeviceSuitable(
 		return 0;
 	}
 
-	queueProps = (VkQueueFamilyProperties*) SDL_malloc(
-		queueFamilyCount * sizeof(VkQueueFamilyProperties)
-	);
+	queueProps = (VkQueueFamilyProperties*) SDL_stack_alloc(VkQueueFamilyProperties, queueFamilyCount);
 	renderer->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueProps);
 
 	for (i = 0; i < queueFamilyCount; i++)
@@ -6728,7 +6741,7 @@ static uint8_t IsDeviceSuitable(
 		}
 	}
 
-	SDL_free(queueProps);
+	SDL_stack_free(queueProps);
 
 	if (foundSuitableDevice)
 	{
@@ -6747,7 +6760,7 @@ static uint8_t IsDeviceSuitable(
 
 static uint8_t CheckValidationLayerSupport(
 	const char** validationLayers,
-	uint32_t length
+	uint32_t validationLayersLength
 ) {
 	uint32_t layerCount;
 	VkLayerProperties *availableLayers;
@@ -6755,13 +6768,10 @@ static uint8_t CheckValidationLayerSupport(
 	uint8_t layerFound;
 
 	vkEnumerateInstanceLayerProperties(&layerCount, NULL);
-
-	availableLayers = (VkLayerProperties*) SDL_malloc(
-		layerCount * sizeof(VkLayerProperties)
-	);
+	availableLayers = SDL_stack_alloc(VkLayerProperties, layerCount);
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers);
 
-	for (i = 0; i < length; i++)
+	for (i = 0; i < validationLayersLength; i++)
 	{
 		layerFound = 0;
 
@@ -6776,13 +6786,12 @@ static uint8_t CheckValidationLayerSupport(
 
 		if (!layerFound)
 		{
-			SDL_free(availableLayers);
-			return 0;
+			break;
 		}
 	}
 
-	SDL_free(availableLayers);
-	return 1;
+	SDL_stack_free(availableLayers);
+	return layerFound;
 }
 
 static uint8_t ChooseSwapSurfaceFormat(
@@ -7072,7 +7081,7 @@ static uint8_t CreateInstance(
 ) {
 	VkResult vulkanResult;
 	VkApplicationInfo appInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
-	const char **instanceExtensionNames;
+	const char **instanceExtensionNames, **temp;
 	uint32_t instanceExtensionCount;
 	VkInstanceCreateInfo createInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	const char *layerNames[] = { "VK_LAYER_KHRONOS_validation" };
@@ -7098,24 +7107,46 @@ static uint8_t CreateInstance(
 
 	instanceExtensionNames = SDL_stack_alloc(const char*, instanceExtensionCount);
 
-	if (
-		!SDL_Vulkan_GetInstanceExtensions(
-			(SDL_Window*) presentationParameters->deviceWindowHandle,
-			&instanceExtensionCount,
-			instanceExtensionNames
-		)
-	) {
+	if (!SDL_Vulkan_GetInstanceExtensions(
+		(SDL_Window*) presentationParameters->deviceWindowHandle,
+		&instanceExtensionCount,
+		instanceExtensionNames
+	)) {
 		FNA3D_LogError(
-			"SDL_Vulkan_GetInstanceExtensions(): getExtensions %s",
+			"SDL_Vulkan_GetInstanceExtensions(): %s",
 			SDL_GetError()
 		);
 		goto create_instance_fail;
 	}
 
-	if (!CheckInstanceExtensionSupport(instanceExtensionNames, instanceExtensionCount))
-	{
+	if (!CheckInstanceExtensionSupport(
+		instanceExtensionNames,
+		instanceExtensionCount,
+		&renderer->supportsDebugUtils
+	)) {
 		FNA3D_LogError("Required Vulkan instance extensions not supported");
 		goto create_instance_fail;
+	}
+
+	if (renderer->supportsDebugUtils)
+	{
+		/* Copy the old array into a new stack allocation */
+		temp = SDL_stack_alloc(const char*, instanceExtensionCount + 1);
+		SDL_memcpy(
+			temp,
+			instanceExtensionNames,
+			sizeof(const char*) * (instanceExtensionCount)
+		);
+		SDL_stack_free(instanceExtensionNames);
+		instanceExtensionNames = temp;
+
+		/* Append the debug extension to the end */
+		instanceExtensionNames[instanceExtensionCount] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+		instanceExtensionCount += 1;
+	}
+	else
+	{
+		FNA3D_LogWarn("%s is not supported!", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	}
 
 	/* create info structure */
@@ -7127,7 +7158,7 @@ static uint8_t CreateInstance(
 
 	if (renderer->debugMode)
 	{
-		createInfo.enabledLayerCount = sizeof(layerNames)/sizeof(layerNames[0]);
+		createInfo.enabledLayerCount = SDL_arraysize(layerNames);
 		if (!CheckValidationLayerSupport(layerNames, createInfo.enabledLayerCount))
 		{
 			FNA3D_LogWarn("Validation layers not found, continuing without validation");
