@@ -6668,30 +6668,26 @@ static uint8_t QuerySwapChainSupport(
 	return 1;
 }
 
-/* we want a physical device that is dedicated and supports our features */
-static uint8_t IsDeviceIdeal(
+/* if no dedicated device exists, one that supports our features would be fine */
+static uint8_t IsDeviceSuitable(
 	FNAVulkanRenderer *renderer,
 	VkPhysicalDevice physicalDevice,
 	const char** requiredExtensionNames,
 	uint32_t requiredExtensionNamesLength,
 	VkSurfaceKHR surface,
-	QueueFamilyIndices* queueFamilyIndices
+	QueueFamilyIndices *queueFamilyIndices,
+	uint8_t *isIdeal
 ) {
-	VkPhysicalDeviceProperties deviceProperties;
 	uint32_t queueFamilyCount, i;
 	SwapChainSupportDetails swapChainSupportDetails;
 	VkQueueFamilyProperties *queueProps;
 	VkBool32 supportsPresent;
+	uint8_t foundSuitableDevice = 0;
+	VkPhysicalDeviceProperties deviceProperties;
 
 	queueFamilyIndices->graphicsFamily = UINT32_MAX;
 	queueFamilyIndices->presentFamily = UINT32_MAX;
-
-	renderer->vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-
-	if (deviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-	{
-		return 0;
-	}
+	*isIdeal = 0;
 
 	if (!CheckDeviceExtensionSupport(renderer, physicalDevice, requiredExtensionNames, requiredExtensionNamesLength))
 	{
@@ -6720,78 +6716,32 @@ static uint8_t IsDeviceIdeal(
 	);
 	renderer->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueProps);
 
-	for (i = 0; i < queueFamilyCount; i++) {
+	for (i = 0; i < queueFamilyCount; i++)
+	{
 		renderer->vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &supportsPresent);
-		if (supportsPresent && (queueProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+		if (supportsPresent && (queueProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0)
+		{
 			queueFamilyIndices->graphicsFamily = i;
 			queueFamilyIndices->presentFamily = i;
-			SDL_free(queueProps);
-			return 1;
+			foundSuitableDevice = 1;
+			break;
 		}
 	}
 
 	SDL_free(queueProps);
-	return 0;
-}
 
-/* FIXME: remove code duplication here */
-/* if no dedicated device exists, one that supports our features would be fine */
-static uint8_t IsDeviceSuitable(
-	FNAVulkanRenderer *renderer,
-	VkPhysicalDevice physicalDevice,
-	const char** requiredExtensionNames,
-	uint32_t requiredExtensionNamesLength,
-	VkSurfaceKHR surface,
-	QueueFamilyIndices* queueFamilyIndices
-) {
-	VkPhysicalDeviceProperties deviceProperties;
-	uint32_t queueFamilyCount, i;
-	SwapChainSupportDetails swapChainSupportDetails;
-	VkQueueFamilyProperties *queueProps;
-	VkBool32 supportsPresent;
-
-	queueFamilyIndices->graphicsFamily = UINT32_MAX;
-	queueFamilyIndices->presentFamily = UINT32_MAX;
-
-	if (!CheckDeviceExtensionSupport(renderer, physicalDevice, requiredExtensionNames, requiredExtensionNamesLength))
+	if (foundSuitableDevice)
 	{
-		return 0;
-	}
-
-	renderer->vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-
-	renderer->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, NULL);
-
-	if (!QuerySwapChainSupport(renderer, physicalDevice, surface, &swapChainSupportDetails))
-	{
-		SDL_free(swapChainSupportDetails.formats);
-		SDL_free(swapChainSupportDetails.presentModes);
-		return 0;
-	}
-
-	if (swapChainSupportDetails.formatsLength == 0 || swapChainSupportDetails.presentModesLength == 0)
-	{
-		SDL_free(swapChainSupportDetails.formats);
-		SDL_free(swapChainSupportDetails.presentModes);
-		return 0;
-	}
-
-	queueProps = (VkQueueFamilyProperties*) SDL_malloc(
-		queueFamilyCount * sizeof(VkQueueFamilyProperties)
-	);
-	renderer->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueProps);
-
-	for (i = 0; i < queueFamilyCount; i++) {
-		renderer->vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &supportsPresent);
-		if (supportsPresent && (queueProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
-			queueFamilyIndices->graphicsFamily = i;
-			queueFamilyIndices->presentFamily = i;
-			SDL_free(queueProps);
-			return 1;
+		/* We'd really like a discrete GPU, but it's OK either way! */
+		renderer->vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		{
+			*isIdeal = 1;
 		}
+		return 1;
 	}
 
-	SDL_free(queueProps);
+	/* This device is useless for us, next! */
 	return 0;
 }
 
@@ -7214,13 +7164,10 @@ static uint8_t DeterminePhysicalDevice(
 ) {
 	VkResult vulkanResult;
 	VkPhysicalDevice *physicalDevices;
-	uint32_t physicalDeviceCount;
+	uint32_t physicalDeviceCount, i, suitableIndex;
 	VkPhysicalDevice physicalDevice;
-
 	QueueFamilyIndices queueFamilyIndices;
-	uint8_t physicalDeviceAssigned = 0;
-
-	uint32_t i;
+	uint8_t isIdeal;
 
 	vulkanResult = renderer->vkEnumeratePhysicalDevices(
 		renderer->instance,
@@ -7261,32 +7208,35 @@ static uint8_t DeterminePhysicalDevice(
 		return 0;
 	}
 
+	/* Any suitable device will do, but we'd like the best */
+	suitableIndex = -1;
 	for (i = 0; i < physicalDeviceCount; i++)
 	{
-		if (IsDeviceIdeal(renderer, physicalDevices[i], deviceExtensionNames, deviceExtensionCount, renderer->surface, &queueFamilyIndices))
-		{
-			physicalDevice = physicalDevices[i];
-			physicalDeviceAssigned = 1;
-			break;
-		}
-	}
-
-	if (!physicalDeviceAssigned)
-	{
-		for (i = 0; i < physicalDeviceCount; i++)
-		{
-			if (IsDeviceSuitable(renderer, physicalDevices[i], deviceExtensionNames, deviceExtensionCount, renderer->surface, &queueFamilyIndices))
+		if (IsDeviceSuitable(
+			renderer,
+			physicalDevices[i],
+			deviceExtensionNames,
+			deviceExtensionCount,
+			renderer->surface,
+			&queueFamilyIndices,
+			&isIdeal
+		)) {
+			suitableIndex = i;
+			if (isIdeal)
 			{
-				physicalDevice = physicalDevices[i];
-				physicalDeviceAssigned = 1;
+				/* This is the one we want! */
 				break;
 			}
 		}
 	}
 
-	if (!physicalDeviceAssigned)
+	if (suitableIndex != -1)
 	{
-		FNA3D_LogError("No suitable physical devices found.");
+		physicalDevice = physicalDevices[suitableIndex];
+	}
+	else
+	{
+		FNA3D_LogError("No suitable physical devices found");
 		SDL_stack_free(physicalDevices);
 		return 0;
 	}
