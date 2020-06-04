@@ -526,9 +526,9 @@ typedef struct ImageMemoryBarrierCreateInfo {
 } ImageMemoryBarrierCreateInfo;
 
 typedef struct VulkanResourceAccessInfo {
-    VkPipelineStageFlags    stageMask;
-    VkAccessFlags           accessMask;
-    VkImageLayout           imageLayout;
+	VkPipelineStageFlags stageMask;
+	VkAccessFlags accessMask;
+	VkImageLayout imageLayout;
 } VulkanResourceAccessInfo;
 
 static const VulkanResourceAccessInfo AccessMap[RESOURCE_ACCESS_TYPES_COUNT] = {
@@ -631,9 +631,10 @@ static const VulkanResourceAccessInfo AccessMap[RESOURCE_ACCESS_TYPES_COUNT] = {
 	},
 
 	/* RESOURCE_ACCESS_END_OF_READ */
-    {   0,
-        0,
-        VK_IMAGE_LAYOUT_UNDEFINED
+	{
+		0,
+		0,
+		VK_IMAGE_LAYOUT_UNDEFINED
 	},
 
 	/* RESOURCE_ACCESS_VERTEX_SHADER_WRITE */
@@ -1387,59 +1388,59 @@ static const char* VkImageLayoutString(VkImageLayout layout)
 			layoutString = "VK_IMAGE_LAYOUT_UNDEFINED";
 			break;
 
-    	case VK_IMAGE_LAYOUT_GENERAL:
+		case VK_IMAGE_LAYOUT_GENERAL:
 			layoutString = "VK_IMAGE_LAYOUT_GENERAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_PREINITIALIZED:
+		case VK_IMAGE_LAYOUT_PREINITIALIZED:
 			layoutString = "VK_IMAGE_LAYOUT_PREINITIALIZED";
 			break;
 
-    	case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL";
 			break;
 
-    	case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
 			layoutString = "VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL";
 			break;
 
@@ -1447,15 +1448,15 @@ static const char* VkImageLayoutString(VkImageLayout layout)
 			layoutString = "VK_IMAGE_LAYOUT_PRESENT_SRC_KHR";
 			break;
 
-    	case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
+		case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
 			layoutString = "VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR";
 			break;
 
-    	case VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV:
+		case VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV:
 			layoutString = "VK_IMAGE_LAYOUT_SHADING_RATE_OPTIMAL_NV";
 			break;
 
-    	case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
+		case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
 			layoutString = "VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT";
 			break;
 
@@ -7434,13 +7435,12 @@ static uint8_t CreateLogicalDevice(
 	deviceCreateInfo.enabledExtensionCount = deviceExtensionCount;
 
 	vulkanResult = renderer->vkCreateDevice(renderer->physicalDevice, &deviceCreateInfo, NULL, &renderer->logicalDevice);
-   	if (vulkanResult != VK_SUCCESS)
+	if (vulkanResult != VK_SUCCESS)
 	{
 		FNA3D_LogError(
 			"vkCreateDevice failed: %s",
 			VkErrorMessages(vulkanResult)
 		);
-
 		return 0;
 	}
 
