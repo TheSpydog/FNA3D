@@ -6474,7 +6474,7 @@ void VULKAN_SetStringMarker(FNA3D_Renderer *driverData, const char *text)
 	{
 		labelInfo.pLabelName = text;
 		renderer->vkCmdInsertDebugUtilsLabelEXT(
-			renderer->commandBuffers[renderer->commandBufferCount - 1],
+			renderer->commandBuffers[renderer->currentSwapChainIndex],
 			&labelInfo
 		);
 	}
