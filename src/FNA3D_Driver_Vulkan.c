@@ -6547,7 +6547,7 @@ static uint8_t CheckInstanceExtensionSupport(
 	uint32_t requiredExtensionsLength,
 	uint8_t *supportsDebugUtils
 ) {
-	uint32_t extensionCount, i, j;
+	uint32_t extensionCount, i;
 	VkExtensionProperties *availableExtensions;
 	uint8_t allExtensionsSupported = 1;
 
@@ -6581,7 +6581,7 @@ static uint8_t CheckDeviceExtensionSupport(
 	const char** requiredExtensions,
 	uint32_t requiredExtensionsLength
 ) {
-	uint32_t extensionCount, i, j;
+	uint32_t extensionCount, i;
 	VkExtensionProperties *availableExtensions;
 	uint8_t allExtensionsSupported = 1;
 
