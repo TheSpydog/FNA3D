@@ -779,7 +779,8 @@ static VulkanBuffer* CreateBuffer(
 
 static void CreateBufferMemoryBarrier(
 	FNAVulkanRenderer *renderer,
-	BufferMemoryBarrierCreateInfo barrierCreateInfo
+	VulkanResourceAccessType nextResourceAccessType,
+	VulkanBuffer *stagingBuffer
 );
 
 static void CreateImageMemoryBarrier(
@@ -2819,8 +2820,10 @@ void VULKAN_DestroyDevice(FNA3D_Device *device)
 
 static void CreateBufferMemoryBarrier(
 	FNAVulkanRenderer *renderer,
-	BufferMemoryBarrierCreateInfo barrierCreateInfo
+	VulkanResourceAccessType nextResourceAccessType,
+	VulkanBuffer *stagingBuffer
 ) {
+	BufferMemoryBarrierCreateInfo barrierCreateInfo;
 	VkPipelineStageFlags srcStages = 0;
 	VkPipelineStageFlags dstStages = 0;
 	VkBufferMemoryBarrier memoryBarrier = {
@@ -2829,6 +2832,21 @@ static void CreateBufferMemoryBarrier(
 	uint32_t i;
 	VulkanResourceAccessType prevAccess, nextAccess;
 	const VulkanResourceAccessInfo *prevAccessInfo, *nextAccessInfo;
+
+	if (stagingBuffer->resourceAccessType == nextResourceAccessType)
+	{
+		return;
+	}
+
+	barrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
+	barrierCreateInfo.prevAccessCount = 1;
+	barrierCreateInfo.pNextAccesses = &nextResourceAccessType;
+	barrierCreateInfo.nextAccessCount = 1;
+	barrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrierCreateInfo.buffer = stagingBuffer->handle;
+	barrierCreateInfo.offset = stagingBuffer->internalOffset;
+	barrierCreateInfo.size = stagingBuffer->internalBufferSize;
 
 	memoryBarrier.srcAccessMask = 0;
 	memoryBarrier.dstAccessMask = 0;
@@ -2899,6 +2917,8 @@ static void CreateBufferMemoryBarrier(
 
 	renderer->bufferMemoryBarriers[renderer->bufferMemoryBarrierCount] = memoryBarrier;
 	renderer->bufferMemoryBarrierCount++;
+
+	stagingBuffer->resourceAccessType = nextResourceAccessType;
 }
 
 static void CreateImageMemoryBarrier(
@@ -5813,8 +5833,6 @@ void VULKAN_SetTextureData2D(
 	VulkanBuffer *stagingBuffer = vulkanTexture->stagingBuffer;
 	void *stagingData;
 	ImageMemoryBarrierCreateInfo imageBarrierCreateInfo;
-	VulkanResourceAccessType nextResourceAccessType;
-	BufferMemoryBarrierCreateInfo bufferBarrierCreateInfo;
 	VkBufferImageCopy imageCopy;
 
 	renderer->vkMapMemory(
@@ -5849,27 +5867,11 @@ void VULKAN_SetTextureData2D(
 		&vulkanTexture->imageData->imageResource
 	);
 
-	nextResourceAccessType = RESOURCE_ACCESS_TRANSFER_READ;
-
-	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
-	{
-		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
-		bufferBarrierCreateInfo.prevAccessCount = 1;
-		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
-		bufferBarrierCreateInfo.nextAccessCount = 1;
-		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
-		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
-		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
-
-		CreateBufferMemoryBarrier(
-			renderer,
-			bufferBarrierCreateInfo
-		);
-
-		stagingBuffer->resourceAccessType = nextResourceAccessType;
-	}
+	CreateBufferMemoryBarrier(
+		renderer,
+		RESOURCE_ACCESS_TRANSFER_READ,
+		stagingBuffer
+	);
 
 	SubmitPipelineBarrier(renderer);
 
@@ -5950,8 +5952,6 @@ void VULKAN_SetTextureDataYUV(
 	int32_t yDataLength = BytesPerImage(yWidth, yHeight, FNA3D_SURFACEFORMAT_ALPHA8);
 	int32_t uvDataLength = BytesPerImage(uvWidth, uvHeight, FNA3D_SURFACEFORMAT_ALPHA8);
 	ImageMemoryBarrierCreateInfo imageBarrierCreateInfo;
-	VulkanResourceAccessType nextResourceAccessType;
-	BufferMemoryBarrierCreateInfo bufferBarrierCreateInfo;
 	VkBufferImageCopy imageCopy;
 
 	/* Initialize values that are the same for Y, U, and V */
@@ -5975,8 +5975,6 @@ void VULKAN_SetTextureDataYUV(
 	imageCopy.imageSubresource.layerCount = 1;
 	imageCopy.imageSubresource.mipLevel = 0;
 	imageCopy.bufferOffset = 0;
-
-	nextResourceAccessType = RESOURCE_ACCESS_TRANSFER_READ;
 
 	/* Y */
 
@@ -6009,25 +6007,11 @@ void VULKAN_SetTextureDataYUV(
 		&tex->imageData->imageResource
 	);
 
-	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
-	{
-		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
-		bufferBarrierCreateInfo.prevAccessCount = 1;
-		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
-		bufferBarrierCreateInfo.nextAccessCount = 1;
-		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
-		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
-		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
-
-		CreateBufferMemoryBarrier(
-			renderer,
-			bufferBarrierCreateInfo
-		);
-
-		stagingBuffer->resourceAccessType = nextResourceAccessType;
-	}
+	CreateBufferMemoryBarrier(
+		renderer,
+		RESOURCE_ACCESS_TRANSFER_READ,
+		stagingBuffer
+	);
 
 	SubmitPipelineBarrier(renderer);
 
@@ -6083,25 +6067,11 @@ void VULKAN_SetTextureDataYUV(
 		&tex->imageData->imageResource
 	);
 
-	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
-	{
-		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
-		bufferBarrierCreateInfo.prevAccessCount = 1;
-		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
-		bufferBarrierCreateInfo.nextAccessCount = 1;
-		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
-		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
-		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
-
-		CreateBufferMemoryBarrier(
-			renderer,
-			bufferBarrierCreateInfo
-		);
-
-		stagingBuffer->resourceAccessType = nextResourceAccessType;
-	}
+	CreateBufferMemoryBarrier(
+		renderer,
+		RESOURCE_ACCESS_TRANSFER_READ,
+		stagingBuffer
+	);
 
 	SubmitPipelineBarrier(renderer);
 
@@ -6145,25 +6115,11 @@ void VULKAN_SetTextureDataYUV(
 		&tex->imageData->imageResource
 	);
 
-	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
-	{
-		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
-		bufferBarrierCreateInfo.prevAccessCount = 1;
-		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
-		bufferBarrierCreateInfo.nextAccessCount = 1;
-		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
-		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
-		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
-
-		CreateBufferMemoryBarrier(
-			renderer,
-			bufferBarrierCreateInfo
-		);
-
-		stagingBuffer->resourceAccessType = nextResourceAccessType;
-	}
+	CreateBufferMemoryBarrier(
+		renderer,
+		RESOURCE_ACCESS_TRANSFER_READ,
+		stagingBuffer
+	);
 
 	SubmitPipelineBarrier(renderer);
 
