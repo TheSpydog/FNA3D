@@ -5942,7 +5942,239 @@ void VULKAN_SetTextureDataYUV(
 	void* data,
 	int32_t dataLength
 ) {
-	/* TODO */
+	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
+	VulkanTexture *tex;
+	VulkanBuffer *stagingBuffer;
+	void *stagingData;
+	uint8_t *dataPtr = (uint8_t*) data;
+	int32_t yDataLength = BytesPerImage(yWidth, yHeight, FNA3D_SURFACEFORMAT_ALPHA8);
+	int32_t uvDataLength = BytesPerImage(uvWidth, uvHeight, FNA3D_SURFACEFORMAT_ALPHA8);
+	ImageMemoryBarrierCreateInfo imageBarrierCreateInfo;
+	VulkanResourceAccessType nextResourceAccessType;
+	BufferMemoryBarrierCreateInfo bufferBarrierCreateInfo;
+	VkBufferImageCopy imageCopy;
+
+	/* Initialize values that are the same for Y, U, and V */
+
+	imageBarrierCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageBarrierCreateInfo.subresourceRange.baseArrayLayer = 0;
+	imageBarrierCreateInfo.subresourceRange.baseMipLevel = 0;
+	imageBarrierCreateInfo.subresourceRange.layerCount = 1;
+	imageBarrierCreateInfo.subresourceRange.levelCount = 1;
+	imageBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageBarrierCreateInfo.discardContents = 0;
+	imageBarrierCreateInfo.nextAccess = RESOURCE_ACCESS_TRANSFER_WRITE;
+
+	imageCopy.imageExtent.depth = 1;
+	imageCopy.imageOffset.x = 0;
+	imageCopy.imageOffset.y = 0;
+	imageCopy.imageOffset.z = 0;
+	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageCopy.imageSubresource.baseArrayLayer = 0;
+	imageCopy.imageSubresource.layerCount = 1;
+	imageCopy.imageSubresource.mipLevel = 0;
+	imageCopy.bufferOffset = 0;
+
+	nextResourceAccessType = RESOURCE_ACCESS_TRANSFER_READ;
+
+	/* Y */
+
+	tex = (VulkanTexture*) y;
+	stagingBuffer = tex->stagingBuffer;
+
+	renderer->vkMapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory,
+		stagingBuffer->internalOffset,
+		stagingBuffer->size,
+		0,
+		&stagingData
+	);
+
+	SDL_memcpy(
+		stagingData,
+		dataPtr,
+		yDataLength
+	);
+
+	renderer->vkUnmapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory
+	);
+
+	CreateImageMemoryBarrier(
+		renderer,
+		imageBarrierCreateInfo,
+		&tex->imageData->imageResource
+	);
+
+	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
+	{
+		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
+		bufferBarrierCreateInfo.prevAccessCount = 1;
+		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
+		bufferBarrierCreateInfo.nextAccessCount = 1;
+		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
+		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
+		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
+
+		CreateBufferMemoryBarrier(
+			renderer,
+			bufferBarrierCreateInfo
+		);
+
+		stagingBuffer->resourceAccessType = nextResourceAccessType;
+	}
+
+	SubmitPipelineBarrier(renderer);
+
+	imageCopy.imageExtent.width = yWidth;
+	imageCopy.imageExtent.height = yHeight;
+	imageCopy.bufferRowLength = BytesPerRow(yWidth, FNA3D_SURFACEFORMAT_ALPHA8);
+	imageCopy.bufferImageHeight = yHeight;
+
+	renderer->vkCmdCopyBufferToImage(
+		renderer->commandBuffers[renderer->currentFrame],
+		stagingBuffer->handle,
+		tex->imageData->imageResource.image,
+		AccessMap[tex->imageData->imageResource.resourceAccessType].imageLayout,
+		1,
+		&imageCopy
+	);
+
+	/* These apply to both U and V */
+
+	imageCopy.imageExtent.width = uvWidth;
+	imageCopy.imageExtent.height = uvHeight;
+	imageCopy.bufferRowLength = BytesPerRow(uvWidth, FNA3D_SURFACEFORMAT_ALPHA8);
+	imageCopy.bufferImageHeight = uvHeight;
+
+	/* U */
+
+	tex = (VulkanTexture*) u;
+	stagingBuffer = tex->stagingBuffer;
+
+	renderer->vkMapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory,
+		stagingBuffer->internalOffset,
+		stagingBuffer->size,
+		0,
+		&stagingData
+	);
+
+	SDL_memcpy(
+		stagingData,
+		dataPtr + yDataLength,
+		uvDataLength
+	);
+
+	renderer->vkUnmapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory
+	);
+
+	CreateImageMemoryBarrier(
+		renderer,
+		imageBarrierCreateInfo,
+		&tex->imageData->imageResource
+	);
+
+	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
+	{
+		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
+		bufferBarrierCreateInfo.prevAccessCount = 1;
+		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
+		bufferBarrierCreateInfo.nextAccessCount = 1;
+		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
+		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
+		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
+
+		CreateBufferMemoryBarrier(
+			renderer,
+			bufferBarrierCreateInfo
+		);
+
+		stagingBuffer->resourceAccessType = nextResourceAccessType;
+	}
+
+	SubmitPipelineBarrier(renderer);
+
+	renderer->vkCmdCopyBufferToImage(
+		renderer->commandBuffers[renderer->currentFrame],
+		stagingBuffer->handle,
+		tex->imageData->imageResource.image,
+		AccessMap[tex->imageData->imageResource.resourceAccessType].imageLayout,
+		1,
+		&imageCopy
+	);
+
+	/* V */
+
+	tex = (VulkanTexture*) v;
+	stagingBuffer = tex->stagingBuffer;
+
+	renderer->vkMapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory,
+		stagingBuffer->internalOffset,
+		stagingBuffer->size,
+		0,
+		&stagingData
+	);
+
+	SDL_memcpy(
+		stagingData,
+		dataPtr + yDataLength + uvDataLength,
+		uvDataLength
+	);
+
+	renderer->vkUnmapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory
+	);
+
+	CreateImageMemoryBarrier(
+		renderer,
+		imageBarrierCreateInfo,
+		&tex->imageData->imageResource
+	);
+
+	if (stagingBuffer->resourceAccessType != nextResourceAccessType)
+	{
+		bufferBarrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
+		bufferBarrierCreateInfo.prevAccessCount = 1;
+		bufferBarrierCreateInfo.pNextAccesses = &nextResourceAccessType;
+		bufferBarrierCreateInfo.nextAccessCount = 1;
+		bufferBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		bufferBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		bufferBarrierCreateInfo.buffer = stagingBuffer->handle;
+		bufferBarrierCreateInfo.offset = stagingBuffer->internalOffset;
+		bufferBarrierCreateInfo.size = stagingBuffer->internalBufferSize;
+
+		CreateBufferMemoryBarrier(
+			renderer,
+			bufferBarrierCreateInfo
+		);
+
+		stagingBuffer->resourceAccessType = nextResourceAccessType;
+	}
+
+	SubmitPipelineBarrier(renderer);
+
+	renderer->vkCmdCopyBufferToImage(
+		renderer->commandBuffers[renderer->currentFrame],
+		stagingBuffer->handle,
+		tex->imageData->imageResource.image,
+		AccessMap[tex->imageData->imageResource.resourceAccessType].imageLayout,
+		1,
+		&imageCopy
+	);
 }
 
 void VULKAN_GetTextureData2D(
