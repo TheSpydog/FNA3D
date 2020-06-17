@@ -6304,11 +6304,15 @@ void VULKAN_GetTextureData2D(
 	VulkanTexture *vulkanTexture = (VulkanTexture*) texture;
 	ImageMemoryBarrierCreateInfo imageBarrierCreateInfo;
 	VulkanBuffer *stagingBuffer = vulkanTexture->stagingBuffer;
+	VulkanResourceAccessType prevResourceAccess;
 	void *stagingData;
 	VkBufferImageCopy imageCopy;
 	int32_t row;
 	uint8_t *dataPtr = (uint8_t*) data;
 	int32_t formatSize = Texture_GetFormatSize(format);
+
+	/* Cache this so we can restore it later */
+	prevResourceAccess = vulkanTexture->imageData->imageResource.resourceAccessType;
 
 	imageBarrierCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	imageBarrierCreateInfo.subresourceRange.baseArrayLayer = 0;
@@ -6357,6 +6361,16 @@ void VULKAN_GetTextureData2D(
 		stagingBuffer->handle,
 		1,
 		&imageCopy
+	);
+
+	/* Restore the image layout and wait for completion of the render pass */
+
+	imageBarrierCreateInfo.nextAccess = prevResourceAccess;
+	CreateImageMemoryBarrier(
+		renderer,
+		renderer->dataCommandBuffers[renderer->currentFrame],
+		imageBarrierCreateInfo,
+		&vulkanTexture->imageData->imageResource
 	);
 
 	Stall(renderer);
