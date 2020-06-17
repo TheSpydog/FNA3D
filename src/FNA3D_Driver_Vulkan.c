@@ -80,8 +80,11 @@ typedef enum VulkanResourceAccessType {
 	RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE,
 	RESOURCE_ACCESS_TRANSFER_WRITE,
 	RESOURCE_ACCESS_HOST_WRITE,
+
+	/* read-writes */
 	RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 	RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE,
+	RESOURCE_ACCESS_TRANSFER_READ_WRITE,
 	RESOURCE_ACCESS_GENERAL,
 
 	/* count */
@@ -695,6 +698,13 @@ static const VulkanResourceAccessInfo AccessMap[RESOURCE_ACCESS_TYPES_COUNT] = {
 		VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
 		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
 		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+	},
+
+	/* RESOURCE_ACCESS_TRANSFER_READ_WRITE */
+	{
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_IMAGE_LAYOUT_GENERAL /* FIXME: What should this be? -caleb */
 	},
 
 	/* RESOURCE_ACCESS_GENERAL */
@@ -2372,12 +2382,13 @@ static VulkanBuffer* CreateBuffer(
 	{
 		usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	}
-
-	if (	resourceAccessType == RESOURCE_ACCESS_TRANSFER_READ ||
-		resourceAccessType == RESOURCE_ACCESS_TRANSFER_WRITE	)
+	else if (resourceAccessType == RESOURCE_ACCESS_TRANSFER_WRITE)
 	{
-		/* FIXME: There's probably a better way to handle this... -caleb */
-		usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	}
+	else if (resourceAccessType == RESOURCE_ACCESS_TRANSFER_READ_WRITE)
+	{
+		usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	}
 
 	result->usageFlags = usageFlags;
@@ -3230,7 +3241,7 @@ static VulkanTexture* CreateTexture(
 		renderer,
 		FNA3D_BUFFERUSAGE_NONE, /* arbitrary */
 		result->imageData->memorySize,
-		RESOURCE_ACCESS_TRANSFER_READ
+		RESOURCE_ACCESS_TRANSFER_READ_WRITE
 	);
 
 	return result;
@@ -6347,6 +6358,8 @@ void VULKAN_GetTextureData2D(
 		1,
 		&imageCopy
 	);
+
+	Stall(renderer);
 
 	/* Map and read from staging buffer */
 
