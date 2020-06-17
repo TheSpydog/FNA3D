@@ -655,7 +655,7 @@ static const VulkanResourceAccessInfo AccessMap[RESOURCE_ACCESS_TYPES_COUNT] = {
 		VK_IMAGE_LAYOUT_GENERAL
 	},
 
-	/* RESOURCE_ACECSS_COLOR_ATTACHMENT_WRITE */
+	/* RESOURCE_ACCESS_COLOR_ATTACHMENT_WRITE */
 	{
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -2372,9 +2372,12 @@ static VulkanBuffer* CreateBuffer(
 	{
 		usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	}
-	else if (resourceAccessType == RESOURCE_ACCESS_TRANSFER_WRITE)
+
+	if (	resourceAccessType == RESOURCE_ACCESS_TRANSFER_READ ||
+		resourceAccessType == RESOURCE_ACCESS_TRANSFER_WRITE	)
 	{
-		usageFlags = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		/* FIXME: There's probably a better way to handle this... -caleb */
+		usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	}
 
 	result->usageFlags = usageFlags;
@@ -3180,7 +3183,11 @@ static VulkanTexture* CreateTexture(
 	FNAVulkanImageData *imageData;
 	VulkanBuffer *stagingBuffer;
 	SurfaceFormatMapping surfaceFormatMapping = XNAToVK_SurfaceFormat[format];
-	uint32_t usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	uint32_t usageFlags = (
+		VK_IMAGE_USAGE_SAMPLED_BIT |
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+		VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+	);
 
 	result = (VulkanTexture*) SDL_malloc(sizeof(VulkanTexture));
 	SDL_memset(result, '\0', sizeof(VulkanTexture));
@@ -6152,7 +6159,7 @@ void VULKAN_SetTextureDataYUV(
 
 	imageCopy.imageExtent.width = yWidth;
 	imageCopy.imageExtent.height = yHeight;
-	imageCopy.bufferRowLength = BytesPerRow(yWidth, FNA3D_SURFACEFORMAT_ALPHA8);
+	imageCopy.bufferRowLength = yWidth;
 	imageCopy.bufferImageHeight = yHeight;
 
 	renderer->vkCmdCopyBufferToImage(
@@ -6168,7 +6175,7 @@ void VULKAN_SetTextureDataYUV(
 
 	imageCopy.imageExtent.width = uvWidth;
 	imageCopy.imageExtent.height = uvHeight;
-	imageCopy.bufferRowLength = BytesPerRow(uvWidth, FNA3D_SURFACEFORMAT_ALPHA8);
+	imageCopy.bufferRowLength = uvWidth;
 	imageCopy.bufferImageHeight = uvHeight;
 
 	/* U */
@@ -6282,7 +6289,97 @@ void VULKAN_GetTextureData2D(
 	void* data,
 	int32_t dataLength
 ) {
-	/* TODO */
+	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
+	VulkanTexture *vulkanTexture = (VulkanTexture*) texture;
+	ImageMemoryBarrierCreateInfo imageBarrierCreateInfo;
+	VulkanBuffer *stagingBuffer = vulkanTexture->stagingBuffer;
+	void *stagingData;
+	VkBufferImageCopy imageCopy;
+	int32_t row;
+	uint8_t *dataPtr = (uint8_t*) data;
+	int32_t formatSize = Texture_GetFormatSize(format);
+
+	imageBarrierCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageBarrierCreateInfo.subresourceRange.baseArrayLayer = 0;
+	imageBarrierCreateInfo.subresourceRange.baseMipLevel = level;
+	imageBarrierCreateInfo.subresourceRange.layerCount = 1;
+	imageBarrierCreateInfo.subresourceRange.levelCount = 1;
+	imageBarrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageBarrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageBarrierCreateInfo.discardContents = 0;
+	imageBarrierCreateInfo.nextAccess = RESOURCE_ACCESS_TRANSFER_READ;
+
+	CreateImageMemoryBarrier(
+		renderer,
+		renderer->dataCommandBuffers[renderer->currentFrame],
+		imageBarrierCreateInfo,
+		&vulkanTexture->imageData->imageResource
+	);
+
+	CreateBufferMemoryBarrier(
+		renderer,
+		renderer->dataCommandBuffers[renderer->currentFrame],
+		RESOURCE_ACCESS_TRANSFER_WRITE,
+		stagingBuffer
+	);
+
+	/* Save texture data to staging buffer */
+
+	imageCopy.imageExtent.width = w;
+	imageCopy.imageExtent.height = h;
+	imageCopy.imageExtent.depth = 1;
+	imageCopy.bufferRowLength = w;
+	imageCopy.bufferImageHeight = h;
+	imageCopy.imageOffset.x = x;
+	imageCopy.imageOffset.y = y;
+	imageCopy.imageOffset.z = 0;
+	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageCopy.imageSubresource.baseArrayLayer = 0;
+	imageCopy.imageSubresource.layerCount = 1;
+	imageCopy.imageSubresource.mipLevel = level;
+	imageCopy.bufferOffset = 0;
+
+	renderer->vkCmdCopyImageToBuffer(
+		renderer->dataCommandBuffers[renderer->currentFrame],
+		vulkanTexture->imageData->imageResource.image,
+		AccessMap[vulkanTexture->imageData->imageResource.resourceAccessType].imageLayout,
+		stagingBuffer->handle,
+		1,
+		&imageCopy
+	);
+
+	/* Map and read from staging buffer */
+
+	CreateBufferMemoryBarrier(
+		renderer,
+		renderer->dataCommandBuffers[renderer->currentFrame],
+		RESOURCE_ACCESS_TRANSFER_READ,
+		stagingBuffer
+	);
+
+	renderer->vkMapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory,
+		stagingBuffer->internalOffset,
+		stagingBuffer->size,
+		0,
+		&stagingData
+	);
+
+	for (row = y; row < y + h; row += 1)
+	{
+		SDL_memcpy(
+			dataPtr,
+			(uint8_t*) stagingData + (row /* FIXME: multiply by subresource layout row pitch! */) + (x * formatSize),
+			formatSize * w
+		);
+		dataPtr += formatSize * w;
+	}
+
+	renderer->vkUnmapMemory(
+		renderer->logicalDevice,
+		stagingBuffer->deviceMemory
+	);
 }
 
 void VULKAN_GetTextureData3D(
@@ -6299,7 +6396,9 @@ void VULKAN_GetTextureData3D(
 	void* data,
 	int32_t dataLength
 ) {
-	/* TODO */
+	FNA3D_LogError(
+		"GetTextureData3D is unsupported!"
+	);
 }
 
 void VULKAN_GetTextureDataCube(
