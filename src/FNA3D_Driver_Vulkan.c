@@ -237,7 +237,6 @@ struct VulkanTexture {
 	uint8_t hasMipmaps;
 	int32_t width;
 	int32_t height;
-	uint8_t isPrivate;
 	FNA3D_SurfaceFormat format;
 };
 
@@ -245,7 +244,6 @@ static VulkanTexture NullTexture =
 {
 	NULL,
 	NULL,
-	0,
 	0,
 	0,
 	0,
@@ -3235,7 +3233,6 @@ static VulkanTexture* CreateTexture(
 	result->height = height;
 	result->format = format;
 	result->hasMipmaps = levelCount > 1;
-	result->isPrivate = isRenderTarget;
 
 	result->stagingBuffer = CreateBuffer(
 		renderer,
@@ -5698,12 +5695,6 @@ static void Stall(FNAVulkanRenderer *renderer)
 		return;
 	}
 
-	renderer->vkResetFences(
-		renderer->logicalDevice,
-		1,
-		&renderer->inFlightFences[renderer->currentFrame]
-	);
-
 	renderer->needNewRenderPass = 1;
 
 	buf = renderer->buffers;
@@ -6348,7 +6339,7 @@ void VULKAN_GetTextureData2D(
 	imageCopy.imageOffset.x = x;
 	imageCopy.imageOffset.y = y;
 	imageCopy.imageOffset.z = 0;
-	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; /* FIXME: What about depth/stencil? */
 	imageCopy.imageSubresource.baseArrayLayer = 0;
 	imageCopy.imageSubresource.layerCount = 1;
 	imageCopy.imageSubresource.mipLevel = level;
@@ -6393,15 +6384,11 @@ void VULKAN_GetTextureData2D(
 		&stagingData
 	);
 
-	for (row = y; row < y + h; row += 1)
-	{
-		SDL_memcpy(
-			dataPtr,
-			(uint8_t*) stagingData + (row /* FIXME: multiply by subresource layout row pitch! */) + (x * formatSize),
-			formatSize * w
-		);
-		dataPtr += formatSize * w;
-	}
+	SDL_memcpy(
+		dataPtr,
+		(uint8_t*) stagingData,
+		BytesPerImage(w, h, format)
+	);
 
 	renderer->vkUnmapMemory(
 		renderer->logicalDevice,
