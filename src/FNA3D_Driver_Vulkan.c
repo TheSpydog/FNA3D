@@ -6743,17 +6743,7 @@ void VULKAN_AddDisposeQuery(FNA3D_Renderer *driverData, FNA3D_Query *query)
 	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
 	VulkanQuery *vulkanQuery = (VulkanQuery*) query;
 
-	/* Need to do this between passes */
-	EndPass(renderer);
-
-	renderer->vkCmdResetQueryPool(
-		renderer->drawCommandBuffers[renderer->currentFrame],
-		renderer->queryPool,
-		vulkanQuery->index,
-		1
-	);
-
-	/* Push the now-freed index to the stack */
+	/* Push the now-free index to the stack */
 	renderer->freeQueryIndexStack[vulkanQuery->index] = renderer->freeQueryIndexStackHead;
 	renderer->freeQueryIndexStackHead = vulkanQuery->index;
 
@@ -6764,6 +6754,16 @@ void VULKAN_QueryBegin(FNA3D_Renderer *driverData, FNA3D_Query *query)
 {
 	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
 	VulkanQuery *vulkanQuery = (VulkanQuery*) query;
+
+	/* Need to do this between passes */
+	EndPass(renderer);
+
+	renderer->vkCmdResetQueryPool(
+		renderer->drawCommandBuffers[renderer->currentFrame],
+		renderer->queryPool,
+		vulkanQuery->index,
+		1
+	);
 
 	renderer->vkCmdBeginQuery(
 		renderer->drawCommandBuffers[renderer->currentFrame],
