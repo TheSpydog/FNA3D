@@ -3327,6 +3327,7 @@ static VkPipeline FetchPipeline(
 
 	/* Blend */
 
+	SDL_zero(colorBlendAttachments);
 	colorBlendAttachments[0].blendEnable = !(
 		renderer->blendState.colorSourceBlend == FNA3D_BLEND_ONE &&
 		renderer->blendState.colorDestinationBlend == FNA3D_BLEND_ZERO &&
@@ -4190,13 +4191,18 @@ static void RenderPassClear(
 		renderer->depthStencilAttachment != NULL
 	);
 	uint32_t i, attachmentCount;
+	VkClearAttachment *dsClearAttachment;
 
 	if (!clearColor && !clearDepth && !clearStencil)
 	{
 		return;
 	}
 
-	attachmentCount = renderer->colorAttachmentCount;
+	attachmentCount = 0;
+	if (clearColor)
+	{
+		attachmentCount = renderer->colorAttachmentCount;
+	}
 	if (shouldClearDepthStencil)
 	{
 		attachmentCount += 1;
@@ -4225,16 +4231,17 @@ static void RenderPassClear(
 
 	if (shouldClearDepthStencil)
 	{
-		clearAttachments[renderer->colorAttachmentCount].aspectMask = 0;
+		dsClearAttachment = &clearAttachments[attachmentCount - 1];
+		dsClearAttachment->aspectMask = 0;
 		if (clearDepth)
 		{
-			clearAttachments[renderer->colorAttachmentCount].aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
-			clearAttachments[renderer->colorAttachmentCount].clearValue.depthStencil.depth = depth;
+			dsClearAttachment->aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+			dsClearAttachment->clearValue.depthStencil.depth = depth;
 		}
 		if (clearStencil)
 		{
-			clearAttachments[renderer->colorAttachmentCount].aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-			clearAttachments[renderer->colorAttachmentCount].clearValue.depthStencil.stencil = stencil;
+			dsClearAttachment->aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+			dsClearAttachment->clearValue.depthStencil.stencil = stencil;
 		}
 	}
 
