@@ -5616,6 +5616,15 @@ void VULKAN_SetTextureData2D(
 	ImageMemoryBarrierCreateInfo imageBarrierCreateInfo;
 	VkBufferImageCopy imageCopy;
 
+	/* DXT formats require w and h to be multiples of 4 */
+	if (	format == FNA3D_SURFACEFORMAT_DXT1 ||
+		format == FNA3D_SURFACEFORMAT_DXT3 ||
+		format == FNA3D_SURFACEFORMAT_DXT5	)
+	{
+		w = (w + 3) & ~3;
+		h = (h + 3) & ~3;
+	}
+
 	VULKAN_BeginFrame(driverData);
 
 	renderer->vkMapMemory(
