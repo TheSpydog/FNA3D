@@ -4185,15 +4185,21 @@ static void RenderPassClear(
 		color->z,
 		color->w
 	}}};
+	uint8_t shouldClearDepthStencil = (
+		(clearDepth || clearStencil) &&
+		renderer->depthStencilAttachment != NULL
+	);
 	uint32_t i, attachmentCount;
 
-	if (!clearColor && !clearDepth && !clearStencil) { 
-		return; 
+	if (!clearColor && !clearDepth && !clearStencil)
+	{
+		return;
 	}
 
 	attachmentCount = renderer->colorAttachmentCount;
-	if (renderer->depthStencilAttachment != NULL) { 
-		attachmentCount++; 
+	if (shouldClearDepthStencil)
+	{
+		attachmentCount += 1;
 	}
 
 	clearAttachments = SDL_stack_alloc(
@@ -4209,45 +4215,26 @@ static void RenderPassClear(
 
 	if (clearColor)
 	{
-		for (i = 0; i < renderer->colorAttachmentCount; i++)
+		for (i = 0; i < renderer->colorAttachmentCount; i += 1)
 		{
-			clearRect.rect.extent.width = SDL_max(
-				clearRect.rect.extent.width, 
-				renderer->colorAttachments[i]->dimensions.width
-			);
-			clearRect.rect.extent.height = SDL_max(
-				clearRect.rect.extent.height,
-				renderer->colorAttachments[i]->dimensions.height
-			);
 			clearAttachments[i].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			clearAttachments[i].colorAttachment = i;
 			clearAttachments[i].clearValue = clearValue;
 		}
 	}
 
-	if (clearDepth || clearStencil)
+	if (shouldClearDepthStencil)
 	{
-		if (renderer->depthStencilAttachment != NULL)
+		clearAttachments[renderer->colorAttachmentCount].aspectMask = 0;
+		if (clearDepth)
 		{
-			clearAttachments[renderer->colorAttachmentCount].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-
-			clearRect.rect.extent.width = SDL_max(
-				clearRect.rect.extent.width,
-				renderer->depthStencilAttachment->dimensions.width
-			);
-			clearRect.rect.extent.height = SDL_max(
-				clearRect.rect.extent.height,
-				renderer->depthStencilAttachment->dimensions.height
-			);
-
-			if (clearDepth)
-			{
-				clearAttachments[renderer->colorAttachmentCount].clearValue.depthStencil.depth = depth;
-			}
-			if (clearStencil)
-			{
-				clearAttachments[renderer->colorAttachmentCount].clearValue.depthStencil.stencil = stencil;
-			}
+			clearAttachments[renderer->colorAttachmentCount].aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+			clearAttachments[renderer->colorAttachmentCount].clearValue.depthStencil.depth = depth;
+		}
+		if (clearStencil)
+		{
+			clearAttachments[renderer->colorAttachmentCount].aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+			clearAttachments[renderer->colorAttachmentCount].clearValue.depthStencil.stencil = stencil;
 		}
 	}
 
@@ -4280,9 +4267,11 @@ static void OutsideRenderPassClear(
 		color->z,
 		color->w
 	}};
-	VkClearDepthStencilValue clearDepthStencilValue;
-	clearDepthStencilValue.depth = depth;
-	clearDepthStencilValue.stencil = stencil;
+	uint8_t shouldClearDepthStencil = (
+		(clearDepth || clearStencil) &&
+		renderer->depthStencilAttachment != NULL
+	);
+	VkClearDepthStencilValue clearDepthStencilValue = { depth, stencil };
 
 	if (clearColor)
 	{
@@ -4327,47 +4316,53 @@ static void OutsideRenderPassClear(
 		}
 	}
 
-	if (clearDepth || clearStencil)
+	if (shouldClearDepthStencil)
 	{
-		if (renderer->depthStencilAttachment != NULL)
+		subresourceRange.aspectMask = 0;
+		if (clearDepth)
 		{
-			subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-			subresourceRange.baseArrayLayer = 0;
-			subresourceRange.baseMipLevel = 0;
-			subresourceRange.layerCount = 1;
-			subresourceRange.levelCount = 1;
-
-			barrierCreateInfo.subresourceRange = subresourceRange;
-			barrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrierCreateInfo.discardContents = 0;
-			barrierCreateInfo.nextAccess = RESOURCE_ACCESS_TRANSFER_WRITE;
-
-			CreateImageMemoryBarrier(
-				renderer,
-				renderer->drawCommandBuffers[renderer->currentFrame],
-				barrierCreateInfo,
-				&renderer->depthStencilAttachment->imageResource
-			);
-
-			renderer->vkCmdClearDepthStencilImage(
-				renderer->drawCommandBuffers[renderer->currentFrame],
-				renderer->depthStencilAttachment->imageResource.image,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				&clearDepthStencilValue,
-				1,
-				&subresourceRange
-			);
-
-			barrierCreateInfo.nextAccess = RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE;
-
-			CreateImageMemoryBarrier(
-				renderer,
-				renderer->drawCommandBuffers[renderer->currentFrame],
-				barrierCreateInfo,
-				&renderer->depthStencilAttachment->imageResource
-			);
+			subresourceRange.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
+		if (clearStencil)
+		{
+			subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+
+		subresourceRange.baseArrayLayer = 0;
+		subresourceRange.baseMipLevel = 0;
+		subresourceRange.layerCount = 1;
+		subresourceRange.levelCount = 1;
+
+		barrierCreateInfo.subresourceRange = subresourceRange;
+		barrierCreateInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrierCreateInfo.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrierCreateInfo.discardContents = 0;
+		barrierCreateInfo.nextAccess = RESOURCE_ACCESS_TRANSFER_WRITE;
+
+		CreateImageMemoryBarrier(
+			renderer,
+			renderer->drawCommandBuffers[renderer->currentFrame],
+			barrierCreateInfo,
+			&renderer->depthStencilAttachment->imageResource
+		);
+
+		renderer->vkCmdClearDepthStencilImage(
+			renderer->drawCommandBuffers[renderer->currentFrame],
+			renderer->depthStencilAttachment->imageResource.image,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			&clearDepthStencilValue,
+			1,
+			&subresourceRange
+		);
+
+		barrierCreateInfo.nextAccess = RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE;
+
+		CreateImageMemoryBarrier(
+			renderer,
+			renderer->drawCommandBuffers[renderer->currentFrame],
+			barrierCreateInfo,
+			&renderer->depthStencilAttachment->imageResource
+		);
 	}
 }
 
