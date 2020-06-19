@@ -4193,7 +4193,7 @@ static void RenderPassClear(
 	uint32_t i, attachmentCount;
 	VkClearAttachment *dsClearAttachment;
 
-	if (!clearColor && !clearDepth && !clearStencil)
+	if (!clearColor && !shouldClearDepthStencil)
 	{
 		return;
 	}
