@@ -7641,11 +7641,11 @@ static uint8_t CreateInstance(
 		goto create_instance_fail;
 	}
 
-	SDL_stack_free(instanceExtensionNames);
+	SDL_stack_free((char*) instanceExtensionNames);
 	return 1;
 
 create_instance_fail:
-	SDL_stack_free(instanceExtensionNames);
+	SDL_stack_free((char*) instanceExtensionNames);
 	return 0;
 }
 
