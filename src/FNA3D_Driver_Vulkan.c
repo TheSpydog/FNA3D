@@ -47,6 +47,16 @@
 #define SAMPLER_DESCRIPTOR_POOL_SIZE 256
 #define UNIFORM_BUFFER_DESCRIPTOR_POOL_SIZE 32
 
+#define NULL_BUFFER (VkBuffer) 0
+#define NULL_DESC_SET (VkDescriptorSet) 0
+#define NULL_FENCE (VkFence) 0
+#define NULL_FRAMEBUFFER (VkFramebuffer) 0
+#define NULL_IMAGE_VIEW (VkImageView) 0
+#define NULL_PIPELINE (VkPipeline) 0
+#define NULL_PIPELINE_LAYOUT (VkPipelineLayout) 0
+#define NULL_SAMPLER (VkSampler) 0
+#define NULL_RENDER_PASS (VkRenderPass) 0
+
 const VkComponentMapping IDENTITY_SWIZZLE =
 {
 	VK_COMPONENT_SWIZZLE_R,
@@ -235,9 +245,9 @@ struct VulkanTexture {
 
 static VulkanTexture NullTexture =
 {
-	NULL,
-	NULL,
-	NULL,
+	(VkImage) 0,
+	(VkImageView) 0,
+	(VkDeviceMemory) 0,
 	{0, 0},
 	0,
 	0,
@@ -357,7 +367,7 @@ typedef struct FNAVulkanRenderer
 	FNA3D_PrimitiveType currentPrimitiveType;
 
 	VulkanBuffer *buffers;
-	uint32_t numVertexBindings;
+	int32_t numVertexBindings;
 	FNA3D_VertexBufferBinding *vertexBindings;
 
 	/* counts equal to swap chain count */
@@ -1054,7 +1064,7 @@ static uint8_t DepthFormatContainsStencil(VkFormat format)
 			return 1;
 
 		default:
-			return 0.0f;
+			return 0;
 	}
 
 	SDL_assert(0 && "Invalid depth pixel format");
@@ -1485,8 +1495,6 @@ static void IncrementUniformBufferDescriptorPool(
 	}
 }
 
-/* FIXME: broken descriptor bindings when a descriptor set is empty */
-/* e.g. right now pipelines with no frag UBO will throw validator errors */
 static void BindResources(FNAVulkanRenderer *renderer)
 {
 	uint8_t vertexSamplerDescriptorSetNeedsUpdate, fragSamplerDescriptorSetNeedsUpdate;
@@ -1536,10 +1544,10 @@ static void BindResources(FNAVulkanRenderer *renderer)
 	uint32_t totalSamplerDescriptorsToAllocate = 0;
 	VkResult vulkanResult;
 
-	vertexSamplerDescriptorSetNeedsUpdate = (renderer->currentVertSamplerDescriptorSet == NULL);
-	fragSamplerDescriptorSetNeedsUpdate = (renderer->currentFragSamplerDescriptorSet == NULL);
-	vertUniformBufferDescriptorSetNeedsUpdate = (renderer->currentVertUniformBufferDescriptorSet == NULL);
-	fragUniformBufferDescriptorSetNeedsUpdate = (renderer->currentFragUniformBufferDescriptorSet == NULL);
+	vertexSamplerDescriptorSetNeedsUpdate = (renderer->currentVertSamplerDescriptorSet == NULL_DESC_SET);
+	fragSamplerDescriptorSetNeedsUpdate = (renderer->currentFragSamplerDescriptorSet == NULL_DESC_SET);
+	vertUniformBufferDescriptorSetNeedsUpdate = (renderer->currentVertUniformBufferDescriptorSet == NULL_DESC_SET);
+	fragUniformBufferDescriptorSetNeedsUpdate = (renderer->currentFragUniformBufferDescriptorSet == NULL_DESC_SET);
 
 	vertArrayOffset = (renderer->currentFrame * MAX_TOTAL_SAMPLERS) + MAX_TEXTURE_SAMPLERS;
 	fragArrayOffset = (renderer->currentFrame * MAX_TOTAL_SAMPLERS);
@@ -1756,7 +1764,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 	);
 
 	/* we can't bind a NULL UBO so we have dummy data instead */
-	if (	renderer->currentVertUniformBufferDescriptorSet == NULL ||
+	if (	renderer->currentVertUniformBufferDescriptorSet == NULL_DESC_SET ||
 			vUniform != renderer->ldVertUniformBuffers[renderer->currentFrame]
 	) {
 		if (vUniform != NULL)
@@ -1779,7 +1787,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		renderer->ldVertUniformOffsets[renderer->currentFrame] = vOff;
 	}
 	
-	if (	renderer->currentFragUniformBufferDescriptorSet == NULL ||
+	if (	renderer->currentFragUniformBufferDescriptorSet == NULL_DESC_SET ||
 			fUniform != renderer->ldFragUniformBuffers[renderer->currentFrame]
 	) {
 		if (fUniform != NULL)
@@ -1901,9 +1909,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		renderer->currentVertUniformBufferDescriptorSet = uniformBufferDescriptorSets[vertUniformBufferIndex];
 	}
 
-	dynamicOffsets[dynamicOffsetsCount] = renderer->ldVertUniformOffsets[
-		renderer->currentFrame
-	];
+	dynamicOffsets[dynamicOffsetsCount] = (uint32_t) renderer->ldVertUniformOffsets[renderer->currentFrame];
 	dynamicOffsetsCount++;
 
 	/* frag ubo */
@@ -1912,9 +1918,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		renderer->currentFragUniformBufferDescriptorSet = uniformBufferDescriptorSets[fragUniformBufferIndex];
 	}
 
-	dynamicOffsets[dynamicOffsetsCount] = renderer->ldFragUniformOffsets[
-		renderer->currentFrame
-	];
+	dynamicOffsets[dynamicOffsetsCount] = (uint32_t) renderer->ldFragUniformOffsets[renderer->currentFrame];
 	dynamicOffsetsCount++;
 
 	renderer->vkUpdateDescriptorSets(
@@ -2172,10 +2176,10 @@ static void SetBufferData(
 		else if (options == FNA3D_SETDATAOPTIONS_DISCARD)
 		{
 			vulkanBuffer->internalOffset += vulkanBuffer->size;
-			sizeRequired = vulkanBuffer->internalOffset + dataLength;
+			sizeRequired = (int32_t) vulkanBuffer->internalOffset + dataLength;
 			if (sizeRequired > vulkanBuffer->internalBufferSize)
 			{
-				previousSize = vulkanBuffer->internalBufferSize;
+				previousSize = (int32_t) vulkanBuffer->internalBufferSize;
 				vulkanBuffer->internalBufferSize *= 2;
 				CreateBackingBuffer(
 					renderer,
@@ -2203,7 +2207,7 @@ static void SetBufferData(
 		SDL_memcpy(
 			(uint8_t*) contents + vulkanBuffer->internalOffset,
 			(uint8_t*) contents + vulkanBuffer->prevInternalOffset,
-			vulkanBuffer->size
+			(size_t) vulkanBuffer->size
 		);
 
 		renderer->vkUnmapMemory(
@@ -2954,7 +2958,7 @@ static VkPipelineLayout FetchPipelineLayout(
 	if (vulkanResult != VK_SUCCESS)
 	{
 		LogVulkanResult("vkCreatePipelineLayout", vulkanResult);
-		return NULL;
+		return NULL_PIPELINE_LAYOUT;
 	}
 
 	hmput(renderer->pipelineLayoutHashMap, hash, layout);
@@ -3238,7 +3242,7 @@ static VkPipeline FetchPipeline(FNAVulkanRenderer *renderer)
 	{
 		LogVulkanResult("vkCreateGraphicsPipelines", vulkanResult);
 		FNA3D_LogError("Something has gone very wrong!");
-		return NULL;
+		return NULL_PIPELINE;
 	}
 
 	SDL_free(bindingDescriptions);
@@ -3252,7 +3256,7 @@ static VkPipeline FetchPipeline(FNAVulkanRenderer *renderer)
 static VkRenderPass FetchRenderPass(FNAVulkanRenderer *renderer)
 {
 	VkResult vulkanResult;
-	VkRenderPass renderPass = NULL;
+	VkRenderPass renderPass = NULL_RENDER_PASS;
 	VkAttachmentDescription attachmentDescriptions[MAX_RENDERTARGET_BINDINGS + 1];
 	uint32_t attachmentDescriptionsCount = 0;
 	uint32_t i;
@@ -3398,7 +3402,7 @@ static VkRenderPass FetchRenderPass(FNAVulkanRenderer *renderer)
 	{
 		LogVulkanResult("vkCreateRenderPass", vulkanResult);
 		FNA3D_LogError("Error during render pass creation. Something has gone very wrong!");
-		return NULL;
+		return NULL_RENDER_PASS;
 	}
 
 	hmput(renderer->renderPassHashMap, hash, renderPass);
@@ -3412,32 +3416,32 @@ static FramebufferHash GetFramebufferHash(FNAVulkanRenderer *renderer)
 	hash.colorAttachmentViewOne = renderer->colorAttachments[0]->view;
 	hash.colorMultiSampleAttachmentViewOne = renderer->colorMultiSampleAttachments[0] != NULL ?
 		renderer->colorMultiSampleAttachments[0]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 		
 	hash.colorAttachmentViewTwo = renderer->colorAttachments[1] != NULL ?
 		renderer->colorAttachments[1]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 	hash.colorMultiSampleAttachmentViewTwo = renderer->colorMultiSampleAttachments[1] != NULL ?
 		renderer->colorMultiSampleAttachments[1]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 
 	hash.colorAttachmentViewThree = renderer->colorAttachments[2] != NULL ?
 		renderer->colorAttachments[2]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 	hash.colorMultiSampleAttachmentViewThree = renderer->colorMultiSampleAttachments[2] != NULL ?
 		renderer->colorMultiSampleAttachments[2]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 
 	hash.colorAttachmentViewFour = renderer->colorAttachments[3] != NULL ?
 		renderer->colorAttachments[3]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 	hash.colorMultiSampleAttachmentViewFour = renderer->colorMultiSampleAttachments[3] != NULL ?
 		renderer->colorMultiSampleAttachments[3]->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 
 	hash.depthStencilAttachmentViewFive = renderer->depthStencilAttachment != NULL ?
 		renderer->depthStencilAttachment->view :
-		NULL;
+		NULL_IMAGE_VIEW;
 
 	hash.width = renderer->colorAttachments[0]->dimensions.width;
 	hash.height = renderer->colorAttachments[0]->dimensions.height;
@@ -3543,10 +3547,10 @@ static VkSampler FetchSamplerState(
 	createInfo.mipLodBias = samplerState->mipMapLevelOfDetailBias;
 	/* FIXME: double check that the lod range is correct */
 	createInfo.minLod = 0;
-	createInfo.maxLod = samplerState->maxMipLevel;
+	createInfo.maxLod = (float) samplerState->maxMipLevel;
 	createInfo.maxAnisotropy = samplerState->filter == FNA3D_TEXTUREFILTER_ANISOTROPIC ?
-		SDL_max(1, samplerState->maxAnisotropy) :
-		1;
+		(float) SDL_max(1, samplerState->maxAnisotropy) :
+		1.0f;
 
 	result = renderer->vkCreateSampler(
 		renderer->logicalDevice,
@@ -3715,7 +3719,7 @@ static void BeginRenderPass(
 		{
 			renderer->textureNeedsUpdate[i] = 1;
 		}
-		if (renderer->samplers[i] != NULL)
+		if (renderer->samplers[i] != NULL_SAMPLER)
 		{
 			renderer->samplerNeedsUpdate[i] = 1;
 		}
@@ -3725,13 +3729,13 @@ static void BeginRenderPass(
 	renderer->ldFragUniformOffsets[renderer->currentFrame] = 0;
 	renderer->ldVertUniformBuffers[renderer->currentFrame] = NULL;
 	renderer->ldVertUniformOffsets[renderer->currentFrame] = 0;
-	renderer->currentPipeline = NULL;
+	renderer->currentPipeline = NULL_PIPELINE;
 
 	swapChainOffset = MAX_BOUND_VERTEX_BUFFERS * renderer->currentFrame;
 
 	for (i = swapChainOffset; i < swapChainOffset + MAX_BOUND_VERTEX_BUFFERS; i++)
 	{
-		renderer->ldVertexBuffers[i] = NULL;
+		renderer->ldVertexBuffers[i] = NULL_BUFFER;
 		renderer->ldVertexBufferOffsets[i] = 0;
 	}
 
@@ -3791,10 +3795,10 @@ void VULKAN_BeginFrame(FNA3D_Renderer *driverData)
 
 	renderer->activeUniformBufferDescriptorPoolIndex[renderer->currentFrame] = 0;
 
-	renderer->currentVertSamplerDescriptorSet = NULL;
-	renderer->currentFragSamplerDescriptorSet = NULL;
-	renderer->currentVertUniformBufferDescriptorSet = NULL;
-	renderer->currentFragUniformBufferDescriptorSet = NULL;
+	renderer->currentVertSamplerDescriptorSet = NULL_DESC_SET;
+	renderer->currentFragSamplerDescriptorSet = NULL_DESC_SET;
+	renderer->currentVertUniformBufferDescriptorSet = NULL_DESC_SET;
+	renderer->currentFragUniformBufferDescriptorSet = NULL_DESC_SET;
 
 	MOJOSHADER_vkEndFrame();
 
@@ -4286,7 +4290,7 @@ void VULKAN_DrawInstancedPrimitives(
 	indexBuffer->boundThisFrame = 1;
 	totalIndexOffset = (
 		(startIndex * IndexSize(indexElementSize)) +
-		indexBuffer->internalOffset
+		(int32_t) indexBuffer->internalOffset
 	);
 
 	CheckPrimitiveType(renderer, primitiveType);
@@ -4562,7 +4566,7 @@ void VULKAN_VerifySampler(
 			renderer->textureNeedsUpdate[textureIndex] = 1;
 		}
 
-		if (renderer->samplers[textureIndex] == NULL)
+		if (renderer->samplers[textureIndex] == NULL_SAMPLER)
 		{
 			VkSampler samplerState = FetchSamplerState(
 				renderer,
@@ -4635,7 +4639,8 @@ void VULKAN_ApplyVertexBufferBindings(
 	VkDeviceSize offset;
 	VkBuffer buffers[MAX_BOUND_VERTEX_BUFFERS];
 	VkDeviceSize offsets[MAX_BOUND_VERTEX_BUFFERS];
-	uint32_t i, firstVertexBufferIndex, vertexBufferIndex, bufferCount;
+	int32_t i;
+	uint32_t firstVertexBufferIndex, vertexBufferIndex, bufferCount;
 
 	CheckVertexBufferBindings(
 		renderer,
@@ -4897,7 +4902,7 @@ void VULKAN_SetRenderTargets(
 	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
 	VulkanColorBuffer *cb;
 	VulkanTexture *tex;
-	uint32_t i;
+	int32_t i;
 
 	for (i = 0; i < MAX_RENDERTARGET_BINDINGS; i++)
 	{
@@ -5034,7 +5039,7 @@ static void SetViewportCommand(FNAVulkanRenderer *renderer)
 	VkViewport vulkanViewport;
 
 	/* v-flipping the viewport for compatibility with other APIs -cosmonaut */
-	vulkanViewport.x = renderer->viewport.x;
+	vulkanViewport.x = (float) renderer->viewport.x;
 	if (!renderer->renderTargetBound)
 	{
 		VULKAN_GetBackbufferSize((FNA3D_Renderer*)renderer, &meh, &targetHeight);
@@ -5044,9 +5049,9 @@ static void SetViewportCommand(FNAVulkanRenderer *renderer)
 		targetHeight = renderer->viewport.h;
 	}
 
-	vulkanViewport.y = targetHeight - renderer->viewport.y;
-	vulkanViewport.width = renderer->viewport.w;
-	vulkanViewport.height = -renderer->viewport.h;
+	vulkanViewport.y = (float) (targetHeight - renderer->viewport.y);
+	vulkanViewport.width = (float) renderer->viewport.w;
+	vulkanViewport.height = (float) -renderer->viewport.h;
 	vulkanViewport.minDepth = renderer->viewport.minDepth;
 	vulkanViewport.maxDepth = renderer->viewport.maxDepth;
 
@@ -5154,7 +5159,7 @@ static void DestroySwapchain(FNAVulkanRenderer *renderer)
 {
 	uint32_t i;
 
-	for (i = 0; i < hmlen(renderer->framebufferHashMap); i++)
+	for (i = 0; i < hmlenu(renderer->framebufferHashMap); i++)
 	{
 		renderer->vkDestroyFramebuffer(
 			renderer->logicalDevice,
@@ -6541,7 +6546,7 @@ void VULKAN_CreateEffect(
 ) {
 	MOJOSHADER_effectShaderContext shaderBackend;
 	VulkanEffect *result;
-	uint32_t i;
+	int32_t i;
 
 	shaderBackend.compileShader = (MOJOSHADER_compileShaderFunc) MOJOSHADER_vkCompileShader;
 	shaderBackend.shaderAddRef = (MOJOSHADER_shaderAddRefFunc) MOJOSHADER_vkShaderAddRef;
@@ -6882,7 +6887,7 @@ int32_t VULKAN_GetMaxMultiSampleCount(
 ) {
 	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
 	VkSampleCountFlags flags = renderer->physicalDeviceProperties.properties.limits.framebufferColorSampleCounts;
-	uint32_t maxSupported = 1;
+	int32_t maxSupported = 1;
 
 	if (flags & VK_SAMPLE_COUNT_64_BIT)
 	{
@@ -6985,7 +6990,7 @@ static inline uint8_t SupportsExtension(
 	VkExtensionProperties *availableExtensions,
 	uint32_t numAvailableExtensions
 ) {
-	int32_t i;
+	uint32_t i;
 	for (i = 0; i < numAvailableExtensions; i += 1)
 	{
 		if (SDL_strcmp(ext, availableExtensions[i].extensionName) == 0)
@@ -7437,7 +7442,7 @@ static void GenerateVertexInputInfo(
 	uint8_t attrUse[MOJOSHADER_USAGE_TOTAL][16];
 	uint32_t attributeDescriptionCounter = 0;
 	uint32_t divisorDescriptionCounter = 0;
-	uint32_t i, j, k;
+	int32_t i, j, k;
 	FNA3D_VertexDeclaration vertexDeclaration;
 	FNA3D_VertexElement element;
 	FNA3D_VertexElementUsage usage;
@@ -7538,7 +7543,7 @@ static uint8_t CreateInstance(
 ) {
 	VkResult vulkanResult;
 	VkApplicationInfo appInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
-	const char **instanceExtensionNames;
+	char **instanceExtensionNames;
 	uint32_t instanceExtensionCount;
 	VkInstanceCreateInfo createInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	const char *layerNames[] = { "VK_LAYER_KHRONOS_validation" };
@@ -7568,7 +7573,7 @@ static uint8_t CreateInstance(
 	 * VK_EXT_debug_utils
 	 */
 	instanceExtensionNames = SDL_stack_alloc(
-		const char*,
+		char*,
 		instanceExtensionCount + 2
 	);
 
@@ -7877,7 +7882,7 @@ static void RecreateSwapchain(
 			renderer->graphicsQueue,
 			1,
 			&submitInfo,
-			NULL
+			NULL_FENCE
 		);
 
 		if (result != VK_SUCCESS)
@@ -9045,7 +9050,7 @@ FNA3D_Device* VULKAN_CreateDevice(
 	/* init various renderer properties */
 	renderer->currentDepthFormat = presentationParameters->depthStencilFormat;
 
-	renderer->currentPipeline = NULL;
+	renderer->currentPipeline = NULL_PIPELINE;
 	renderer->needNewRenderPass = 1;
 
 	/* check for DXT1/S3TC support */
@@ -9072,11 +9077,11 @@ FNA3D_Device* VULKAN_CreateDevice(
 	);
 
 	/* initialize various render object caches */
-	hmdefault(renderer->pipelineHashMap, NULL);
-	hmdefault(renderer->pipelineLayoutHashMap, NULL);
-	hmdefault(renderer->renderPassHashMap, NULL);
-	hmdefault(renderer->framebufferHashMap, NULL);
-	hmdefault(renderer->samplerStateHashMap, NULL);
+	hmdefault(renderer->pipelineHashMap, NULL_PIPELINE);
+	hmdefault(renderer->pipelineLayoutHashMap, NULL_PIPELINE_LAYOUT);
+	hmdefault(renderer->renderPassHashMap, NULL_RENDER_PASS);
+	hmdefault(renderer->framebufferHashMap, NULL_FRAMEBUFFER);
+	hmdefault(renderer->samplerStateHashMap, NULL_SAMPLER);
 
 	/* Initialize renderer members not covered by SDL_memset('\0') */
 	SDL_memset(renderer->multiSampleMask, -1, sizeof(renderer->multiSampleMask)); /* AKA 0xFFFFFFFF */
