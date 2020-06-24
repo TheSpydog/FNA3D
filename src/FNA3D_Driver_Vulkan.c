@@ -7543,7 +7543,7 @@ static uint8_t CreateInstance(
 ) {
 	VkResult vulkanResult;
 	VkApplicationInfo appInfo = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
-	char **instanceExtensionNames;
+	const char **instanceExtensionNames;
 	uint32_t instanceExtensionCount;
 	VkInstanceCreateInfo createInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	const char *layerNames[] = { "VK_LAYER_KHRONOS_validation" };
@@ -7573,7 +7573,7 @@ static uint8_t CreateInstance(
 	 * VK_EXT_debug_utils
 	 */
 	instanceExtensionNames = SDL_stack_alloc(
-		char*,
+		const char*,
 		instanceExtensionCount + 2
 	);
 
