@@ -367,7 +367,7 @@ typedef struct FNAVulkanRenderer
 	FNA3D_PrimitiveType currentPrimitiveType;
 
 	VulkanBuffer *buffers;
-	int32_t numVertexBindings;
+	uint32_t numVertexBindings;
 	FNA3D_VertexBufferBinding *vertexBindings;
 
 	/* counts equal to swap chain count */
@@ -7454,7 +7454,7 @@ static void GenerateVertexInputInfo(
 	MOJOSHADER_vkGetBoundShaders(&vertexShader, &blah);
 
 	SDL_memset(attrUse, '\0', sizeof(attrUse));
-	for (i = 0; i < renderer->numVertexBindings; i++)
+	for (i = 0; i < (int32_t) renderer->numVertexBindings; i++)
 	{
 		vertexDeclaration = renderer->vertexBindings[i].vertexDeclaration;
 
