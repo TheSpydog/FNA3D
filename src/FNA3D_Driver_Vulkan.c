@@ -696,90 +696,16 @@ static const VulkanResourceAccessInfo AccessMap[RESOURCE_ACCESS_TYPES_COUNT] = {
 
 /* forward declarations */
 
-static void BeginRenderPass(
-	FNAVulkanRenderer *renderer
-);
-
-static void BindPipeline(
-	FNAVulkanRenderer *renderer
-);
-
-static void BindResources(
-	FNAVulkanRenderer *renderer
-);
-
-static void CheckPrimitiveType(
+static uint8_t CreateFauxBackbuffer(
 	FNAVulkanRenderer *renderer,
-	FNA3D_PrimitiveType primitiveType
+	FNA3D_PresentationParameters *presentationParameters
 );
 
-static void CheckVertexBufferBindings(
-	FNAVulkanRenderer *renderer,
-	FNA3D_VertexBufferBinding *bindings,
-	int32_t numBindings
-);
+static CreateSwapchainResult CreateSwapchain(FNAVulkanRenderer *renderer);
 
-static void CreateBackingBuffer(
-	FNAVulkanRenderer *renderer,
-	VulkanBuffer *buffer,
-	VkDeviceSize previousSize,
-	VkBufferUsageFlags usageFlags
-);
+static void RecreateSwapchain(FNAVulkanRenderer *renderer);
 
-/* FIXME: do we even have a write only buffer concept in vulkan? */
-static VulkanBuffer* CreateBuffer(
-	FNAVulkanRenderer *renderer,
-	FNA3D_BufferUsage usage, 
-	VkDeviceSize size,
-	VulkanResourceAccessType resourceAccessType
-); 
-
-static void CreateBufferMemoryBarrier(
-	FNAVulkanRenderer *renderer,
-	VulkanResourceAccessType nextResourceAccessType,
-	VulkanBuffer *stagingBuffer
-);
-
-static void CreateImageMemoryBarrier(
-	FNAVulkanRenderer *renderer,
-	VulkanResourceAccessType nextAccess,
-	VkImageAspectFlags aspectMask,
-	uint32_t depth,
-	uint32_t levelCount,
-	uint8_t discardContents,
-	VkImage image,
-	VulkanResourceAccessType *resourceAccessType
-);
-
-static uint8_t CreateTexture(
-	FNAVulkanRenderer *renderer,
-	uint32_t width,
-	uint32_t height,
-	uint32_t depth,
-	uint8_t isCube,
-	VkSampleCountFlagBits samples,
-	uint32_t levelCount,
-	VkFormat format,
-	VkComponentMapping swizzle,
-	VkImageAspectFlags aspectMask,
-	VkImageTiling tiling,
-	VkImageType imageType,
-	VkImageUsageFlags usage,
-	VkMemoryPropertyFlags memoryProperties,
-	VulkanTexture *texture
-);
-
-static CreateSwapchainResult CreateSwapchain(
-	FNAVulkanRenderer *renderer
-);
-
-static void RecreateSwapchain(
-	FNAVulkanRenderer *renderer
-);
-
-static void PerformDeferredDestroys(
-	FNAVulkanRenderer *renderer
-);
+static void PerformDeferredDestroys(FNAVulkanRenderer *renderer);
 
 static void DestroyBuffer(
 	FNAVulkanRenderer *renderer,
@@ -810,52 +736,15 @@ static void DestroyTexture(
 	VulkanTexture *imageData
 );
 
-static void DestroySwapchain(
-	FNAVulkanRenderer *renderer
-);
+static void DestroySwapchain(FNAVulkanRenderer *renderer);
 
-static void EndPass(
-	FNAVulkanRenderer *renderer
-);
+static void EndPass(FNAVulkanRenderer *renderer);
 
-static VkPipeline FetchPipeline(
-	FNAVulkanRenderer *renderer
-);
+static VkPipeline FetchPipeline(FNAVulkanRenderer *renderer);
 
-static VkPipelineLayout FetchPipelineLayout(
-	FNAVulkanRenderer *renderer,
-	MOJOSHADER_vkShader *vertShader,
-	MOJOSHADER_vkShader *fragShader
-);
+static PipelineHash GetPipelineHash(FNAVulkanRenderer *renderer);
 
-static VkRenderPass FetchRenderPass(
-	FNAVulkanRenderer *renderer
-);
-
-static VkFramebuffer FetchFramebuffer(
-	FNAVulkanRenderer *renderer,
-	VkRenderPass renderPass
-);
-
-static VkSampler FetchSamplerState(
-	FNAVulkanRenderer *renderer,
-	FNA3D_SamplerState *samplerState,
-	uint8_t hasMipmaps
-);
-
-static PipelineHash GetPipelineHash(
-	FNAVulkanRenderer *renderer
-);
-
-static PipelineLayoutHash GetPipelineLayoutHash(
-	FNAVulkanRenderer *renderer,
-	MOJOSHADER_vkShader *vertShader,
-	MOJOSHADER_vkShader *fragShader
-);
-
-static RenderPassHash GetRenderPassHash(
-	FNAVulkanRenderer *renderer
-);
+static RenderPassHash GetRenderPassHash(FNAVulkanRenderer *renderer);
 
 static uint8_t FindMemoryType(
 	FNAVulkanRenderer *renderer,
@@ -873,38 +762,7 @@ static void GenerateVertexInputInfo(
 	uint32_t *divisorDescriptionCount
 );
 
-static void InternalBeginFrame(FNAVulkanRenderer *renderer);
-
-static void RenderPassClear(
-	FNAVulkanRenderer *renderer,
-	FNA3D_Vec4 *color,
-	float depth,
-	int32_t stencil,
-	uint8_t clearColor,
-	uint8_t clearDepth,
-	uint8_t clearStencil
-);
-
-static void UpdateRenderPass(
-	FNAVulkanRenderer *renderer
-);
-
-static void SetBufferData(
-	FNA3D_Renderer *driverData,
-	FNA3D_Buffer *buffer,
-	int32_t offsetInBytes,
-	void* data,
-	int32_t dataLength,
-	FNA3D_SetDataOptions options
-);
-
-void VULKAN_SetRenderTargets(
-	FNA3D_Renderer *driverData,
-	FNA3D_RenderTargetBinding *renderTargets,
-	int32_t numRenderTargets,
-	FNA3D_Renderbuffer *renderbuffer,
-	FNA3D_DepthFormat depthFormat
-); 
+static void UpdateRenderPass(FNAVulkanRenderer *renderer);
 
 void VULKAN_GetTextureData2D(
 	FNA3D_Renderer *driverData,
@@ -931,18 +789,6 @@ static void RemoveBuffer(
 	FNA3D_Buffer *buffer
 );
 
-static VkExtent2D ChooseSwapExtent(
-	void* windowHandle,
-	const VkSurfaceCapabilitiesKHR capabilities
-);
-
-static uint8_t QuerySwapChainSupport(
-	FNAVulkanRenderer* renderer,
-	VkPhysicalDevice physicalDevice,
-	VkSurfaceKHR surface,
-	SwapChainSupportDetails* outputDetails
-);
-
 static void QueueBufferAndMemoryDestroy(
 	FNAVulkanRenderer *renderer,
 	VkBuffer vkBuffer,
@@ -959,10 +805,7 @@ static void QueueTextureDestroy(
 	VulkanTexture *imageData
 );
 
-static uint8_t CreateFauxBackbuffer(
-	FNAVulkanRenderer *renderer,
-	FNA3D_PresentationParameters *presentationParameters
-);
+void VULKAN_BeginFrame(FNA3D_Renderer *driverData);
 
 void VULKAN_GetBackbufferSize(
 	FNA3D_Renderer *driverData,
@@ -2642,7 +2485,7 @@ static void CreateBufferMemoryBarrier(
 		return;
 	}
 
-	InternalBeginFrame(renderer);
+	VULKAN_BeginFrame((FNA3D_Renderer*) renderer);
 
 	barrierCreateInfo.pPrevAccesses = &stagingBuffer->resourceAccessType;
 	barrierCreateInfo.prevAccessCount = 1;
@@ -2741,7 +2584,7 @@ static void CreateImageMemoryBarrier(
 		return;
 	}
 
-	InternalBeginFrame(renderer);
+	VULKAN_BeginFrame((FNA3D_Renderer*) renderer);
 
 	memoryBarrier.srcAccessMask = 0;
 	memoryBarrier.dstAccessMask = 0;
@@ -3123,9 +2966,8 @@ static VkPipelineLayout FetchPipelineLayout(
 	return layout;
 }
 
-static VkPipeline FetchPipeline(
-	FNAVulkanRenderer *renderer
-) {
+static VkPipeline FetchPipeline(FNAVulkanRenderer *renderer)
+{
 	VkResult vulkanResult;
 	VkPipeline pipeline;
 	VkPipelineViewportStateCreateInfo viewportStateInfo = {
@@ -3412,9 +3254,8 @@ static VkPipeline FetchPipeline(
 	return pipeline;
 }
 
-static VkRenderPass FetchRenderPass(
-	FNAVulkanRenderer *renderer
-) {
+static VkRenderPass FetchRenderPass(FNAVulkanRenderer *renderer)
+{
 	VkResult vulkanResult;
 	VkRenderPass renderPass = NULL;
 	VkAttachmentDescription attachmentDescriptions[MAX_RENDERTARGET_BINDINGS + 1];
@@ -3980,11 +3821,6 @@ void VULKAN_BeginFrame(FNA3D_Renderer *driverData)
 	renderer->commandBufferActive[renderer->currentFrame] = 1;
 	renderer->frameInProgress[renderer->currentFrame] = 1;
 	renderer->needNewRenderPass = 1;
-}
-
-static void InternalBeginFrame(FNAVulkanRenderer *renderer)
-{
-	VULKAN_BeginFrame((FNA3D_Renderer*) renderer);
 }
 
 void VULKAN_SwapBuffers(
@@ -4858,9 +4694,8 @@ void VULKAN_ApplyVertexBufferBindings(
 
 /* Render Targets */
 
-static void UpdateRenderPass(
-	FNAVulkanRenderer *renderer
-) {
+static void UpdateRenderPass(FNAVulkanRenderer *renderer)
+{
 	if (!renderer->frameInProgress[renderer->currentFrame] || !renderer->needNewRenderPass) { return; }
 
 	VULKAN_BeginFrame((FNA3D_Renderer*) renderer);
@@ -4876,9 +4711,8 @@ static void UpdateRenderPass(
 	renderer->needNewRenderPass = 0;
 }
 
-static void PerformDeferredDestroys(
-	FNAVulkanRenderer *renderer
-) {
+static void PerformDeferredDestroys(FNAVulkanRenderer *renderer)
+{
 	uint32_t i;
 
 	for (i = 0; i < renderer->renderbuffersToDestroyCount[renderer->currentFrame]; i++)
@@ -5048,9 +4882,8 @@ static void DestroyBufferAndMemory(
 	SDL_free(bufferMemoryWrapper);
 }
 
-static void EndPass(
-	FNAVulkanRenderer *renderer
-) {
+static void EndPass(FNAVulkanRenderer *renderer)
+{
 	if (renderer->renderPassInProgress)
 	{
 		renderer->vkCmdEndRenderPass(
@@ -5189,9 +5022,8 @@ static void SetScissorRectCommand(FNAVulkanRenderer *renderer)
 	}
 }
 
-static void SetStencilReferenceValueCommand(
-	FNAVulkanRenderer *renderer
-) {
+static void SetStencilReferenceValueCommand(FNAVulkanRenderer *renderer)
+{
 	if (renderer->renderPassInProgress)
 	{
 		renderer->vkCmdSetStencilReference(
@@ -5202,9 +5034,8 @@ static void SetStencilReferenceValueCommand(
 	}
 }
 
-static void SetViewportCommand(
-	FNAVulkanRenderer *renderer
-) {
+static void SetViewportCommand(FNAVulkanRenderer *renderer)
+{
 	int32_t targetHeight, meh;
 	VkViewport vulkanViewport;
 
@@ -8480,7 +8311,7 @@ static uint8_t CreateFauxBackbuffer(
 	
 	renderer->fauxBackbufferSurfaceFormat = presentationParameters->backBufferFormat;
 
-	InternalBeginFrame(renderer);
+	VULKAN_BeginFrame((FNA3D_Renderer*) renderer);
 
 	CreateImageMemoryBarrier(
 		renderer,
