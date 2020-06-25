@@ -5240,6 +5240,7 @@ void VULKAN_ResolveTarget(
 	VulkanTexture *vulkanTexture = (VulkanTexture*) target->texture;
 	int32_t layerCount = target->type == FNA3D_RENDERTARGET_TYPE_CUBE ? 6 : 1;
 	int32_t level;
+	VulkanResourceAccessType origAccessType;
 	VkImageBlit blit;
 
 	/* The target is resolved during the render pass. */
@@ -5248,6 +5249,8 @@ void VULKAN_ResolveTarget(
 	if (target->levelCount > 1)
 	{
 		EndPass(renderer);
+
+		origAccessType = vulkanTexture->resourceAccessType;
 
 		CreateImageMemoryBarrier(
 			renderer,
@@ -5314,6 +5317,35 @@ void VULKAN_ResolveTarget(
 				VK_FILTER_LINEAR
 			);
 		}
+
+		/* Transition level >= 1 back to the original access type */
+		CreateImageMemoryBarrier(
+			renderer,
+			origAccessType,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
+			layerCount,
+			1,
+			target->levelCount - 1,
+			0,
+			vulkanTexture->image,
+			&vulkanTexture->resourceAccessType
+		);
+
+		/* The 0th mip requires a little access type switcheroo... */
+		vulkanTexture->resourceAccessType = RESOURCE_ACCESS_TRANSFER_READ;
+		CreateImageMemoryBarrier(
+			renderer,
+			origAccessType,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
+			layerCount,
+			0,
+			1,
+			0,
+			vulkanTexture->image,
+			&vulkanTexture->resourceAccessType
+		);
 	}
 }
 
