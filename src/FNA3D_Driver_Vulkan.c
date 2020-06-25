@@ -816,7 +816,8 @@ static void QueueTextureDestroy(
 static void IncrementBufferOffset(
 	FNAVulkanRenderer *renderer,
 	VulkanBuffer *buffer,
-	VkDeviceSize dataLength 
+	VkDeviceSize dataLength,
+	uint8_t dynamicSize
 );
 
 static void UpdateRenderPass(FNAVulkanRenderer *renderer);
@@ -2180,7 +2181,7 @@ static void SetBufferData(
 		}
 		else if (options == FNA3D_SETDATAOPTIONS_DISCARD)
 		{
-			IncrementBufferOffset(renderer, vulkanBuffer, dataLength);
+			IncrementBufferOffset(renderer, vulkanBuffer, dataLength, 0);
 		}
 	}
 
@@ -2236,9 +2237,11 @@ static void SetBufferData(
 static void IncrementBufferOffset(
 	FNAVulkanRenderer *renderer,
 	VulkanBuffer *buffer,
-	VkDeviceSize dataLength 
+	VkDeviceSize dataLength,
+	uint8_t dynamicSize 
 ) {
-	buffer->internalOffset += buffer->size;
+	buffer->internalOffset += (dynamicSize) ? dataLength : buffer->size;
+
 	if (buffer->internalOffset + dataLength > buffer->internalBufferSize)
 	{
 		buffer->internalBufferSize = SDL_max(
@@ -5483,8 +5486,6 @@ void VULKAN_SetTextureData2D(
 
 	VULKAN_BeginFrame(driverData);
 
-	IncrementBufferOffset(renderer, stagingBuffer, dataLength);
-
 	renderer->vkMapMemory(
 		renderer->logicalDevice,
 		stagingBuffer->deviceMemory,
@@ -5540,6 +5541,8 @@ void VULKAN_SetTextureData2D(
 		1,
 		&imageCopy
 	);
+
+	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
 }
 
 void VULKAN_SetTextureData3D(
@@ -5563,8 +5566,6 @@ void VULKAN_SetTextureData3D(
 	VkBufferImageCopy imageCopy;
 
 	VULKAN_BeginFrame(driverData);
-
-	IncrementBufferOffset(renderer, stagingBuffer, dataLength);
 
 	renderer->vkMapMemory(
 		renderer->logicalDevice,
@@ -5621,6 +5622,8 @@ void VULKAN_SetTextureData3D(
 		1,
 		&imageCopy
 	);
+
+	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
 }
 
 void VULKAN_SetTextureDataCube(
@@ -5643,8 +5646,6 @@ void VULKAN_SetTextureDataCube(
 	VkBufferImageCopy imageCopy;
 
 	VULKAN_BeginFrame(driverData);
-
-	IncrementBufferOffset(renderer, stagingBuffer, dataLength);
 
 	renderer->vkMapMemory(
 		renderer->logicalDevice,
@@ -5701,6 +5702,8 @@ void VULKAN_SetTextureDataCube(
 		1,
 		&imageCopy
 	);
+
+	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
 }
 
 void VULKAN_SetTextureDataYUV(
@@ -5741,8 +5744,6 @@ void VULKAN_SetTextureDataYUV(
 
 	tex = (VulkanTexture*) y;
 	stagingBuffer = tex->stagingBuffer;
-
-	IncrementBufferOffset(renderer, stagingBuffer, dataLength);
 
 	imageCopy.bufferOffset = stagingBuffer->internalOffset;
 
@@ -5797,6 +5798,8 @@ void VULKAN_SetTextureDataYUV(
 		&imageCopy
 	);
 
+	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
+
 	/* These apply to both U and V */
 
 	imageCopy.imageExtent.width = uvWidth;
@@ -5808,8 +5811,6 @@ void VULKAN_SetTextureDataYUV(
 
 	tex = (VulkanTexture*) u;
 	stagingBuffer = tex->stagingBuffer;
-
-	IncrementBufferOffset(renderer, stagingBuffer, dataLength);
 
 	imageCopy.bufferOffset = stagingBuffer->internalOffset;
 
@@ -5859,12 +5860,12 @@ void VULKAN_SetTextureDataYUV(
 		&imageCopy
 	);
 
+	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
+
 	/* V */
 
 	tex = (VulkanTexture*) v;
 	stagingBuffer = tex->stagingBuffer;
-
-	IncrementBufferOffset(renderer, stagingBuffer, dataLength);
 
 	imageCopy.bufferOffset = stagingBuffer->internalOffset;
 
@@ -5913,6 +5914,8 @@ void VULKAN_SetTextureDataYUV(
 		1,
 		&imageCopy
 	);
+
+	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
 }
 
 void VULKAN_GetTextureData2D(
