@@ -232,6 +232,7 @@ struct VulkanQuery {
 struct VulkanTexture {
 	VkImage image;
 	VkImageView view;
+	VkImageView rtView;
 	VkDeviceMemory memory;
 	VkExtent2D dimensions;
 	uint32_t depth;
@@ -246,6 +247,7 @@ struct VulkanTexture {
 static VulkanTexture NullTexture =
 {
 	(VkImage) 0,
+	(VkImageView) 0,
 	(VkImageView) 0,
 	(VkDeviceMemory) 0,
 	{0, 0},
@@ -2597,7 +2599,9 @@ static void CreateImageMemoryBarrier(
 	FNAVulkanRenderer *renderer,
 	VulkanResourceAccessType nextAccess,
 	VkImageAspectFlags aspectMask,
+	uint32_t baseLayer,
 	uint32_t layerCount,
+	uint32_t baseLevel,
 	uint32_t levelCount,
 	uint8_t discardContents,
 	VkImage image,
@@ -2624,9 +2628,9 @@ static void CreateImageMemoryBarrier(
 	memoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	memoryBarrier.image = image;
 	memoryBarrier.subresourceRange.aspectMask = aspectMask;
-	memoryBarrier.subresourceRange.baseArrayLayer = 0;
+	memoryBarrier.subresourceRange.baseArrayLayer = baseLayer;
 	memoryBarrier.subresourceRange.layerCount = layerCount;
-	memoryBarrier.subresourceRange.baseMipLevel = 0;
+	memoryBarrier.subresourceRange.baseMipLevel = baseLevel;
 	memoryBarrier.subresourceRange.levelCount = levelCount;
 	memoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	memoryBarrier.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -2693,6 +2697,7 @@ static uint8_t CreateTexture(
 	uint32_t height,
 	uint32_t depth,
 	uint8_t isCube,
+	uint8_t isRenderTarget,
 	VkSampleCountFlagBits samples,
 	uint32_t levelCount,
 	VkFormat format,
@@ -2825,8 +2830,33 @@ static uint8_t CreateTexture(
 	if (result != VK_SUCCESS)
 	{
 		LogVulkanResult("vkCreateImageView", result);
-		FNA3D_LogError("Failed to create color attachment image view");
+		FNA3D_LogError("Failed to create texture image view");
 		return 0;
+	}
+
+	if (isRenderTarget)
+	{
+		if (levelCount == 1)
+		{
+			texture->rtView = texture->view;
+		}
+		else
+		{
+			/* Create a framebuffer-compatible view */
+			imageViewCreateInfo.subresourceRange.levelCount = 1;
+			result = renderer->vkCreateImageView(
+				renderer->logicalDevice,
+				&imageViewCreateInfo,
+				NULL,
+				&texture->rtView
+			);
+			if (result != VK_SUCCESS)
+			{
+				LogVulkanResult("vkCreateImageView", result);
+				FNA3D_LogError("Failed to create color attachment image view");
+				return 0;
+			}
+		}
 	}
 
 	texture->dimensions.width = width;
@@ -2862,7 +2892,9 @@ static uint8_t BlitFramebuffer(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_READ,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		1,
+		0,
 		1,
 		0,
 		srcImage,
@@ -2873,7 +2905,9 @@ static uint8_t BlitFramebuffer(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		1,
+		0,
 		1,
 		0,
 		dstImage,
@@ -2919,7 +2953,9 @@ static uint8_t BlitFramebuffer(
 		renderer,
 		RESOURCE_ACCESS_PRESENT,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		1,
+		0,
 		1,
 		0,
 		dstImage,
@@ -2930,7 +2966,9 @@ static uint8_t BlitFramebuffer(
 		renderer,
 		RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		1,
+		0,
 		1,
 		0,
 		srcImage,
@@ -3446,34 +3484,34 @@ static FramebufferHash GetFramebufferHash(FNAVulkanRenderer *renderer)
 {
 	FramebufferHash hash;
 
-	hash.colorAttachmentViewOne = renderer->colorAttachments[0]->view;
+	hash.colorAttachmentViewOne = renderer->colorAttachments[0]->rtView;
 	hash.colorMultiSampleAttachmentViewOne = renderer->colorMultiSampleAttachments[0] != NULL ?
-		renderer->colorMultiSampleAttachments[0]->view :
+		renderer->colorMultiSampleAttachments[0]->rtView :
 		NULL_IMAGE_VIEW;
 		
 	hash.colorAttachmentViewTwo = renderer->colorAttachments[1] != NULL ?
-		renderer->colorAttachments[1]->view :
+		renderer->colorAttachments[1]->rtView :
 		NULL_IMAGE_VIEW;
 	hash.colorMultiSampleAttachmentViewTwo = renderer->colorMultiSampleAttachments[1] != NULL ?
-		renderer->colorMultiSampleAttachments[1]->view :
+		renderer->colorMultiSampleAttachments[1]->rtView :
 		NULL_IMAGE_VIEW;
 
 	hash.colorAttachmentViewThree = renderer->colorAttachments[2] != NULL ?
-		renderer->colorAttachments[2]->view :
+		renderer->colorAttachments[2]->rtView :
 		NULL_IMAGE_VIEW;
 	hash.colorMultiSampleAttachmentViewThree = renderer->colorMultiSampleAttachments[2] != NULL ?
-		renderer->colorMultiSampleAttachments[2]->view :
+		renderer->colorMultiSampleAttachments[2]->rtView :
 		NULL_IMAGE_VIEW;
 
 	hash.colorAttachmentViewFour = renderer->colorAttachments[3] != NULL ?
-		renderer->colorAttachments[3]->view :
+		renderer->colorAttachments[3]->rtView :
 		NULL_IMAGE_VIEW;
 	hash.colorMultiSampleAttachmentViewFour = renderer->colorMultiSampleAttachments[3] != NULL ?
-		renderer->colorMultiSampleAttachments[3]->view :
+		renderer->colorMultiSampleAttachments[3]->rtView :
 		NULL_IMAGE_VIEW;
 
 	hash.depthStencilAttachmentViewFive = renderer->depthStencilAttachment != NULL ?
-		renderer->depthStencilAttachment->view :
+		renderer->depthStencilAttachment->rtView :
 		NULL_IMAGE_VIEW;
 
 	hash.width = renderer->colorAttachments[0]->dimensions.width;
@@ -3486,7 +3524,7 @@ static VkFramebuffer FetchFramebuffer(
 	VkRenderPass renderPass
 ) {
 	VkFramebuffer framebuffer;
-	VkImageView imageViewAttachments[2 *MAX_RENDERTARGET_BINDINGS + 1];
+	VkImageView imageViewAttachments[2 * MAX_RENDERTARGET_BINDINGS + 1];
 	uint32_t i, attachmentCount;
 	VkFramebufferCreateInfo framebufferInfo = {
 		VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO
@@ -3507,22 +3545,18 @@ static VkFramebuffer FetchFramebuffer(
 
 	for (i = 0; i < renderer->colorAttachmentCount; i++)
 	{
+		imageViewAttachments[attachmentCount] = renderer->colorAttachments[i]->rtView;
+		attachmentCount++;
+
 		if (renderer->multiSampleCount > 0)
 		{
-			imageViewAttachments[attachmentCount] = renderer->colorAttachments[i]->view;
-			attachmentCount++;
-			imageViewAttachments[attachmentCount] = renderer->colorMultiSampleAttachments[i]->view;
-			attachmentCount++;
-		}
-		else
-		{
-			imageViewAttachments[attachmentCount] = renderer->colorAttachments[i]->view;
+			imageViewAttachments[attachmentCount] = renderer->colorMultiSampleAttachments[i]->rtView;
 			attachmentCount++;
 		}
 	}
 	if (renderer->depthStencilAttachment != NULL)
 	{
-		imageViewAttachments[attachmentCount] = renderer->depthStencilAttachment->view;
+		imageViewAttachments[attachmentCount] = renderer->depthStencilAttachment->rtView;
 		attachmentCount++;
 	}
 
@@ -3578,8 +3612,8 @@ static VkSampler FetchSamplerState(
 		createInfo.mipmapMode = XNAToVK_MipFilter[samplerState->filter];
 	}
 	createInfo.mipLodBias = samplerState->mipMapLevelOfDetailBias;
-	createInfo.minLod = 0;
-	createInfo.maxLod = (float) samplerState->maxMipLevel;
+	createInfo.minLod = (float) samplerState->maxMipLevel;
+	createInfo.maxLod = VK_LOD_CLAMP_NONE;
 	createInfo.maxAnisotropy = samplerState->filter == FNA3D_TEXTUREFILTER_ANISOTROPIC ?
 		(float) SDL_max(1, samplerState->maxAnisotropy) :
 		1.0f;
@@ -3687,7 +3721,9 @@ static void BeginRenderPass(
 				renderer,
 				RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 				VK_IMAGE_ASPECT_COLOR_BIT,
+				0,
 				renderer->colorAttachments[i]->layerCount,
+				0,
 				1,
 				0,
 				renderer->colorAttachments[i]->image,
@@ -3707,7 +3743,9 @@ static void BeginRenderPass(
 			renderer,
 			RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE,
 			depthAspectFlags,
+			0,
 			renderer->depthStencilAttachment->layerCount,
+			0,
 			1,
 			0,
 			renderer->depthStencilAttachment->image,
@@ -4144,7 +4182,9 @@ static void OutsideRenderPassClear(
 				renderer,
 				RESOURCE_ACCESS_TRANSFER_WRITE,
 				VK_IMAGE_ASPECT_COLOR_BIT,
+				0,
 				renderer->colorAttachments[i]->layerCount,
+				0,
 				renderer->colorAttachments[i]->levelCount,
 				0,
 				renderer->colorAttachments[i]->image,
@@ -4164,7 +4204,9 @@ static void OutsideRenderPassClear(
 				renderer,
 				RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 				VK_IMAGE_ASPECT_COLOR_BIT,
+				0,
 				renderer->colorAttachments[i]->layerCount,
+				0,
 				renderer->colorAttachments[i]->levelCount,
 				0,
 				renderer->colorAttachments[i]->image,
@@ -4180,7 +4222,9 @@ static void OutsideRenderPassClear(
 					renderer,
 					RESOURCE_ACCESS_TRANSFER_WRITE,
 					VK_IMAGE_ASPECT_COLOR_BIT,
+					0,
 					renderer->colorMultiSampleAttachments[i]->layerCount,
+					0,
 					renderer->colorMultiSampleAttachments[i]->levelCount,
 					0,
 					renderer->colorMultiSampleAttachments[i]->image,
@@ -4200,7 +4244,9 @@ static void OutsideRenderPassClear(
 					renderer,
 					RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 					VK_IMAGE_ASPECT_COLOR_BIT,
+					0,
 					renderer->colorMultiSampleAttachments[i]->layerCount,
+					0,
 					renderer->colorMultiSampleAttachments[i]->levelCount,
 					0,
 					renderer->colorMultiSampleAttachments[i]->image,
@@ -4231,7 +4277,9 @@ static void OutsideRenderPassClear(
 			renderer,
 			RESOURCE_ACCESS_TRANSFER_WRITE,
 			depthAspectMask,
+			0,
 			renderer->depthStencilAttachment->layerCount,
+			0,
 			renderer->depthStencilAttachment->levelCount,
 			0,
 			renderer->depthStencilAttachment->image,
@@ -4251,7 +4299,9 @@ static void OutsideRenderPassClear(
 			renderer,
 			RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE,
 			depthAspectMask,
+			0,
 			renderer->depthStencilAttachment->layerCount,
+			0,
 			renderer->depthStencilAttachment->levelCount,
 			0,
 			renderer->depthStencilAttachment->image,
@@ -4617,7 +4667,9 @@ void VULKAN_VerifySampler(
 		renderer,
 		RESOURCE_ACCESS_FRAGMENT_SHADER_READ_SAMPLED_IMAGE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		vulkanTexture->layerCount,
+		0,
 		vulkanTexture->levelCount,
 		0,
 		vulkanTexture->image,
@@ -5184,7 +5236,85 @@ void VULKAN_ResolveTarget(
 	FNA3D_Renderer *driverData,
 	FNA3D_RenderTargetBinding *target
 ) {
-	/* TODO */
+	FNAVulkanRenderer *renderer = (FNAVulkanRenderer*) driverData;
+	VulkanTexture *vulkanTexture = (VulkanTexture*) target->texture;
+	int32_t layerCount = target->type == FNA3D_RENDERTARGET_TYPE_CUBE ? 6 : 1;
+	int32_t level;
+	VkImageBlit blit;
+
+	/* The target is resolved during the render pass. */
+
+	/* If the target has mipmaps, regenerate them now */
+	if (target->levelCount > 1)
+	{
+		EndPass(renderer);
+
+		CreateImageMemoryBarrier(
+			renderer,
+			RESOURCE_ACCESS_TRANSFER_READ,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
+			layerCount,
+			0,
+			1,
+			0,
+			vulkanTexture->image,
+			&vulkanTexture->resourceAccessType
+		);
+
+		CreateImageMemoryBarrier(
+			renderer,
+			RESOURCE_ACCESS_TRANSFER_WRITE,
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
+			layerCount,
+			1,
+			target->levelCount - 1,
+			1,
+			vulkanTexture->image,
+			&vulkanTexture->resourceAccessType
+		);
+
+		for (level = 1; level < target->levelCount; level += 1)
+		{
+			blit.srcOffsets[0].x = 0;
+			blit.srcOffsets[0].y = 0;
+			blit.srcOffsets[0].z = 0;
+
+			blit.srcOffsets[1].x = vulkanTexture->dimensions.width;
+			blit.srcOffsets[1].y = vulkanTexture->dimensions.height;
+			blit.srcOffsets[1].z = 1;
+
+			blit.dstOffsets[0].x = 0;
+			blit.dstOffsets[0].y = 0;
+			blit.dstOffsets[0].z = 0;
+
+			blit.dstOffsets[1].x = vulkanTexture->dimensions.width >> level;
+			blit.dstOffsets[1].y = vulkanTexture->dimensions.height >> level;
+			blit.dstOffsets[1].z = 1;
+
+			blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.srcSubresource.baseArrayLayer = 0;
+			blit.srcSubresource.layerCount = layerCount;
+			blit.srcSubresource.mipLevel = 0;
+
+			blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.dstSubresource.baseArrayLayer = 0;
+			blit.dstSubresource.layerCount = layerCount;
+			blit.dstSubresource.mipLevel = level;
+
+			renderer->vkCmdBlitImage(
+				renderer->commandBuffers[renderer->currentFrame],
+				vulkanTexture->image,
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				vulkanTexture->image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&blit,
+				VK_FILTER_LINEAR
+			);
+		}
+	}
 }
 
 /* Backbuffer Functions */
@@ -5347,6 +5477,7 @@ FNA3D_Texture* VULKAN_CreateTexture2D(
 		height,
 		1,
 		0,
+		isRenderTarget,
 		VK_SAMPLE_COUNT_1_BIT,
 		levelCount,
 		surfaceFormatMapping.formatColor,
@@ -5387,6 +5518,7 @@ FNA3D_Texture* VULKAN_CreateTexture3D(
 		width,
 		height,
 		depth,
+		0,
 		0,
 		VK_SAMPLE_COUNT_1_BIT,
 		levelCount,
@@ -5433,6 +5565,7 @@ FNA3D_Texture* VULKAN_CreateTextureCube(
 		size,
 		1,
 		1,
+		isRenderTarget,
 		VK_SAMPLE_COUNT_1_BIT,
 		levelCount,
 		surfaceFormatMapping.formatColor,
@@ -5461,7 +5594,7 @@ void VULKAN_AddDisposeTexture(
 	{
 		if (renderer->colorAttachments[i] != NULL)
 		{
-			if (vulkanTexture->view == renderer->colorAttachments[i]->view)
+			if (vulkanTexture->view == renderer->colorAttachments[i]->rtView)
 			{
 				renderer->colorAttachments[i] = NULL;
 			}
@@ -5520,7 +5653,9 @@ void VULKAN_SetTextureData2D(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		vulkanTexture->layerCount,
+		0,
 		vulkanTexture->levelCount,
 		0,
 		vulkanTexture->image,
@@ -5601,7 +5736,9 @@ void VULKAN_SetTextureData3D(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		vulkanTexture->layerCount,
+		0,
 		vulkanTexture->levelCount,
 		0,
 		vulkanTexture->image,
@@ -5681,7 +5818,9 @@ void VULKAN_SetTextureDataCube(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		vulkanTexture->layerCount,
+		0,
 		vulkanTexture->levelCount,
 		0,
 		vulkanTexture->image,
@@ -5785,7 +5924,9 @@ void VULKAN_SetTextureDataYUV(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		tex->layerCount,
+		0,
 		tex->levelCount,
 		0,
 		tex->image,
@@ -5852,7 +5993,9 @@ void VULKAN_SetTextureDataYUV(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		tex->layerCount,
+		0,
 		tex->levelCount,
 		0,
 		tex->image,
@@ -5907,7 +6050,9 @@ void VULKAN_SetTextureDataYUV(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		tex->layerCount,
+		0,
 		tex->levelCount,
 		0,
 		tex->image,
@@ -5959,7 +6104,9 @@ void VULKAN_GetTextureData2D(
 		renderer,
 		RESOURCE_ACCESS_TRANSFER_READ,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		vulkanTexture->layerCount,
+		0,
 		vulkanTexture->levelCount,
 		0,
 		vulkanTexture->image,
@@ -6003,7 +6150,9 @@ void VULKAN_GetTextureData2D(
 		renderer,
 		prevResourceAccess,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		vulkanTexture->layerCount,
+		0,
 		vulkanTexture->levelCount,
 		0,
 		vulkanTexture->image,
@@ -6121,6 +6270,7 @@ FNA3D_Renderbuffer* VULKAN_GenColorRenderbuffer(
 			height,
 			1,
 			0,
+			1,
 			XNAToVK_SampleCount(multiSampleCount),
 			1,
 			surfaceFormatMapping.formatColor,
@@ -6139,7 +6289,9 @@ FNA3D_Renderbuffer* VULKAN_GenColorRenderbuffer(
 			renderer,
 			RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
 			renderbuffer->colorBuffer->multiSampleTexture->layerCount,
+			0,
 			renderbuffer->colorBuffer->multiSampleTexture->levelCount,
 			0,
 			renderbuffer->colorBuffer->multiSampleTexture->image,
@@ -6178,6 +6330,7 @@ FNA3D_Renderbuffer* VULKAN_GenDepthStencilRenderbuffer(
 			height,
 			1,
 			0,
+			1,
 			XNAToVK_SampleCount(multiSampleCount),
 			1,
 			depthFormat,
@@ -6198,7 +6351,9 @@ FNA3D_Renderbuffer* VULKAN_GenDepthStencilRenderbuffer(
 		renderer,
 		RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE,
 		depthAspectFlags,
+		0,
 		renderbuffer->depthBuffer->handle->layerCount,
+		0,
 		renderbuffer->depthBuffer->handle->levelCount,
 		0,
 		renderbuffer->depthBuffer->handle->image,
@@ -6268,6 +6423,15 @@ static void DestroyTexture(
 		texture->view,
 		NULL
 	);
+
+	if (texture->rtView != texture->view)
+	{
+		renderer->vkDestroyImageView(
+			renderer->logicalDevice,
+			texture->rtView,
+			NULL
+		);
+	}
 
 	renderer->vkDestroyImage(
 		renderer->logicalDevice,
@@ -8312,6 +8476,7 @@ static uint8_t CreateFauxBackbuffer(
 			presentationParameters->backBufferHeight,
 			1,
 			0,
+			1,
 			VK_SAMPLE_COUNT_1_BIT,
 			1,
 			renderer->surfaceFormatMapping.formatColor,
@@ -8340,7 +8505,9 @@ static uint8_t CreateFauxBackbuffer(
 		renderer,
 		RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		renderer->fauxBackbufferColor.handle->layerCount,
+		0,
 		renderer->fauxBackbufferColor.handle->levelCount,
 		0,
 		renderer->fauxBackbufferColor.handle->image,
@@ -8360,6 +8527,7 @@ static uint8_t CreateFauxBackbuffer(
 			presentationParameters->backBufferHeight,
 			1,
 			0,
+			1,
 			XNAToVK_SampleCount(presentationParameters->multiSampleCount),
 			1,
 			renderer->surfaceFormatMapping.formatColor,
@@ -8376,7 +8544,9 @@ static uint8_t CreateFauxBackbuffer(
 			renderer,
 			RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,
 			renderer->fauxBackbufferMultiSampleColor->layerCount,
+			0,
 			renderer->fauxBackbufferMultiSampleColor->levelCount,
 			0,
 			renderer->fauxBackbufferMultiSampleColor->image,
@@ -8407,6 +8577,7 @@ static uint8_t CreateFauxBackbuffer(
 				presentationParameters->backBufferHeight,
 				1,
 				0,
+				1,
 				XNAToVK_SampleCount(presentationParameters->multiSampleCount),
 				1,
 				vulkanDepthStencilFormat,
@@ -8429,7 +8600,9 @@ static uint8_t CreateFauxBackbuffer(
 			renderer,
 			RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE,
 			depthAspectFlags,
+			0,
 			renderer->fauxBackbufferDepthStencil.handle->layerCount,
+			0,
 			renderer->fauxBackbufferDepthStencil.handle->levelCount,
 			0,
 			renderer->fauxBackbufferDepthStencil.handle->image,
@@ -8840,7 +9013,9 @@ static void CreateDummyData(
 		renderer,
 		RESOURCE_ACCESS_VERTEX_SHADER_READ_SAMPLED_IMAGE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		1,
+		0,
 		1,
 		1,
 		renderer->dummyVertTexture->image,
@@ -8851,7 +9026,9 @@ static void CreateDummyData(
 		renderer,
 		RESOURCE_ACCESS_VERTEX_SHADER_READ_SAMPLED_IMAGE,
 		VK_IMAGE_ASPECT_COLOR_BIT,
+		0,
 		1,
+		0,
 		1,
 		1,
 		renderer->dummyFragTexture->image,
