@@ -181,15 +181,9 @@ struct RenderPassHashMap
 
 typedef struct FramebufferHash
 {
-	VkImageView colorAttachmentViewOne;
-	VkImageView colorMultiSampleAttachmentViewOne;
-	VkImageView colorAttachmentViewTwo;
-	VkImageView colorMultiSampleAttachmentViewTwo;
-	VkImageView colorAttachmentViewThree;
-	VkImageView colorMultiSampleAttachmentViewThree;
-	VkImageView colorAttachmentViewFour;
-	VkImageView colorMultiSampleAttachmentViewFour;
-	VkImageView depthStencilAttachmentViewFive;
+	VkImageView colorAttachmentViews[MAX_RENDERTARGET_BINDINGS];
+	VkImageView colorMultiSampleAttachmentViews[MAX_RENDERTARGET_BINDINGS];
+	VkImageView depthStencilAttachmentView;
 	uint32_t width;
 	uint32_t height;
 } FramebufferHash;
@@ -232,7 +226,7 @@ struct VulkanQuery {
 struct VulkanTexture {
 	VkImage image;
 	VkImageView view;
-	VkImageView rtView;
+	VkImageView rtViews[6];
 	VkDeviceMemory memory;
 	VkExtent2D dimensions;
 	uint32_t depth;
@@ -248,7 +242,7 @@ static VulkanTexture NullTexture =
 {
 	(VkImage) 0,
 	(VkImageView) 0,
-	(VkImageView) 0,
+	{ 0, 0, 0, 0, 0, 0},
 	(VkDeviceMemory) 0,
 	{0, 0},
 	0,
@@ -352,6 +346,7 @@ typedef struct FNAVulkanRenderer
 
 	VulkanTexture *colorAttachments[MAX_RENDERTARGET_BINDINGS];
 	VulkanTexture *colorMultiSampleAttachments[MAX_RENDERTARGET_BINDINGS];
+	FNA3D_CubeMapFace attachmentCubeFaces[MAX_RENDERTARGET_BINDINGS];
 	uint32_t multiSampleCount;
 	uint32_t colorAttachmentCount;
 
@@ -2720,6 +2715,8 @@ static uint8_t CreateTexture(
 	VkImageViewCreateInfo imageViewCreateInfo = {
 		VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO
 	};
+	uint8_t layerCount = isCube ? 6 : 1;
+	uint32_t i;
 
 	imageCreateInfo.flags = isCube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 	imageCreateInfo.imageType = imageType;
@@ -2728,7 +2725,7 @@ static uint8_t CreateTexture(
 	imageCreateInfo.extent.height = height;
 	imageCreateInfo.extent.depth = depth;
 	imageCreateInfo.mipLevels = levelCount;
-	imageCreateInfo.arrayLayers = isCube ? 6 : 1;
+	imageCreateInfo.arrayLayers = layerCount;
 	imageCreateInfo.samples = samples;
 	imageCreateInfo.tiling = tiling;
 	imageCreateInfo.usage = usage;
@@ -2805,20 +2802,8 @@ static uint8_t CreateTexture(
 	imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
 	imageViewCreateInfo.subresourceRange.levelCount = levelCount;
 	imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-	imageViewCreateInfo.subresourceRange.layerCount = isCube ? 6 : 1;
-
-	if (isCube)
-	{
-		imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	}
-	else if (imageType == VK_IMAGE_TYPE_2D)
-	{
-		imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	}
-	else if (imageType == VK_IMAGE_TYPE_3D)
-	{
-		imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
-	}
+	imageViewCreateInfo.subresourceRange.layerCount = layerCount;
+	imageViewCreateInfo.viewType = isCube ? VK_IMAGE_VIEW_TYPE_CUBE : imageType;
 
 	result = renderer->vkCreateImageView(
 		renderer->logicalDevice,
@@ -2836,25 +2821,33 @@ static uint8_t CreateTexture(
 
 	if (isRenderTarget)
 	{
-		if (levelCount == 1)
+		if (!isCube && levelCount == 1)
 		{
-			texture->rtView = texture->view;
+			/* Skip a step and just use the view directly */
+			texture->rtViews[0] = texture->view;
 		}
 		else
 		{
-			/* Create a framebuffer-compatible view */
-			imageViewCreateInfo.subresourceRange.levelCount = 1;
-			result = renderer->vkCreateImageView(
-				renderer->logicalDevice,
-				&imageViewCreateInfo,
-				NULL,
-				&texture->rtView
-			);
-			if (result != VK_SUCCESS)
+			/* Create a framebuffer-compatible view for each layer */
+			for (i = 0; i < layerCount; i += 1)
 			{
-				LogVulkanResult("vkCreateImageView", result);
-				FNA3D_LogError("Failed to create color attachment image view");
-				return 0;
+				imageViewCreateInfo.subresourceRange.levelCount = 1;
+				imageViewCreateInfo.subresourceRange.layerCount = 1;
+				imageViewCreateInfo.subresourceRange.baseArrayLayer = i;
+
+				result = renderer->vkCreateImageView(
+					renderer->logicalDevice,
+					&imageViewCreateInfo,
+					NULL,
+					&texture->rtViews[i]
+				);
+
+				if (result != VK_SUCCESS)
+				{
+					LogVulkanResult("vkCreateImageView", result);
+					FNA3D_LogError("Failed to create color attachment image view");
+					return 0;
+				}
 			}
 		}
 	}
@@ -2865,7 +2858,7 @@ static uint8_t CreateTexture(
 	texture->resourceAccessType = RESOURCE_ACCESS_NONE;
 	texture->surfaceFormat = format;
 	texture->levelCount = levelCount;
-	texture->layerCount = isCube ? 6 : 1;
+	texture->layerCount = layerCount;
 
 	texture->stagingBuffer = CreateBuffer(
 		renderer,
@@ -3483,36 +3476,27 @@ static VkRenderPass FetchRenderPass(FNAVulkanRenderer *renderer)
 static FramebufferHash GetFramebufferHash(FNAVulkanRenderer *renderer)
 {
 	FramebufferHash hash;
+	uint8_t i;
 
-	hash.colorAttachmentViewOne = renderer->colorAttachments[0]->rtView;
-	hash.colorMultiSampleAttachmentViewOne = renderer->colorMultiSampleAttachments[0] != NULL ?
-		renderer->colorMultiSampleAttachments[0]->rtView :
-		NULL_IMAGE_VIEW;
-		
-	hash.colorAttachmentViewTwo = renderer->colorAttachments[1] != NULL ?
-		renderer->colorAttachments[1]->rtView :
-		NULL_IMAGE_VIEW;
-	hash.colorMultiSampleAttachmentViewTwo = renderer->colorMultiSampleAttachments[1] != NULL ?
-		renderer->colorMultiSampleAttachments[1]->rtView :
-		NULL_IMAGE_VIEW;
+	for (i = 0; i < MAX_RENDERTARGET_BINDINGS; i += 1)
+	{
+		hash.colorAttachmentViews[i] = (
+			renderer->colorAttachments[i] != NULL ?
+				renderer->colorAttachments[i]->rtViews[renderer->attachmentCubeFaces[i]] :
+				NULL_IMAGE_VIEW
+		);
+		hash.colorMultiSampleAttachmentViews[i] = (
+			renderer->colorMultiSampleAttachments[i] != NULL ?
+				renderer->colorMultiSampleAttachments[i]->rtViews[renderer->attachmentCubeFaces[i]] :
+				NULL_IMAGE_VIEW
+		);
+	}
 
-	hash.colorAttachmentViewThree = renderer->colorAttachments[2] != NULL ?
-		renderer->colorAttachments[2]->rtView :
-		NULL_IMAGE_VIEW;
-	hash.colorMultiSampleAttachmentViewThree = renderer->colorMultiSampleAttachments[2] != NULL ?
-		renderer->colorMultiSampleAttachments[2]->rtView :
-		NULL_IMAGE_VIEW;
-
-	hash.colorAttachmentViewFour = renderer->colorAttachments[3] != NULL ?
-		renderer->colorAttachments[3]->rtView :
-		NULL_IMAGE_VIEW;
-	hash.colorMultiSampleAttachmentViewFour = renderer->colorMultiSampleAttachments[3] != NULL ?
-		renderer->colorMultiSampleAttachments[3]->rtView :
-		NULL_IMAGE_VIEW;
-
-	hash.depthStencilAttachmentViewFive = renderer->depthStencilAttachment != NULL ?
-		renderer->depthStencilAttachment->rtView :
-		NULL_IMAGE_VIEW;
+	hash.depthStencilAttachmentView = (
+		renderer->depthStencilAttachment != NULL ?
+			renderer->depthStencilAttachment->rtViews[0] :
+			NULL_IMAGE_VIEW
+	);
 
 	hash.width = renderer->colorAttachments[0]->dimensions.width;
 	hash.height = renderer->colorAttachments[0]->dimensions.height;
@@ -3545,18 +3529,18 @@ static VkFramebuffer FetchFramebuffer(
 
 	for (i = 0; i < renderer->colorAttachmentCount; i++)
 	{
-		imageViewAttachments[attachmentCount] = renderer->colorAttachments[i]->rtView;
+		imageViewAttachments[attachmentCount] = renderer->colorAttachments[i]->rtViews[renderer->attachmentCubeFaces[i]];
 		attachmentCount++;
 
 		if (renderer->multiSampleCount > 0)
 		{
-			imageViewAttachments[attachmentCount] = renderer->colorMultiSampleAttachments[i]->rtView;
+			imageViewAttachments[attachmentCount] = renderer->colorMultiSampleAttachments[i]->rtViews[renderer->attachmentCubeFaces[i]];
 			attachmentCount++;
 		}
 	}
 	if (renderer->depthStencilAttachment != NULL)
 	{
-		imageViewAttachments[attachmentCount] = renderer->depthStencilAttachment->rtView;
+		imageViewAttachments[attachmentCount] = renderer->depthStencilAttachment->rtViews[0];
 		attachmentCount++;
 	}
 
@@ -4999,6 +4983,7 @@ void VULKAN_SetRenderTargets(
 	if (renderTargets == NULL)
 	{
 		renderer->colorAttachments[0] = renderer->fauxBackbufferColor.handle;
+		renderer->attachmentCubeFaces[0] = (FNA3D_CubeMapFace) 0;
 		renderer->colorAttachmentCount = 1;
 
 		if (renderer->fauxBackbufferMultiSampleCount > 1)
@@ -5017,6 +5002,12 @@ void VULKAN_SetRenderTargets(
 	{
 		for (i = 0; i < numRenderTargets; i++)
 		{
+			renderer->attachmentCubeFaces[i] = (
+				renderTargets[i].type == FNA3D_RENDERTARGET_TYPE_CUBE ?
+					renderTargets[i].cube.face :
+					(FNA3D_CubeMapFace) 0
+			);
+
 			if (renderTargets[i].colorBuffer != NULL)
 			{
 				cb = ((VulkanRenderbuffer*) renderTargets[i].colorBuffer)->colorBuffer;
@@ -5626,7 +5617,7 @@ void VULKAN_AddDisposeTexture(
 	{
 		if (renderer->colorAttachments[i] != NULL)
 		{
-			if (vulkanTexture->view == renderer->colorAttachments[i]->rtView)
+			if (vulkanTexture->view == renderer->colorAttachments[i]->rtViews[renderer->attachmentCubeFaces[i]])
 			{
 				renderer->colorAttachments[i] = NULL;
 			}
@@ -6291,10 +6282,12 @@ FNA3D_Renderbuffer* VULKAN_GenColorRenderbuffer(
 	renderbuffer->colorBuffer = (VulkanColorBuffer*) SDL_malloc(sizeof(VulkanColorBuffer));
 	renderbuffer->colorBuffer->handle = vlkTexture;
 	renderbuffer->colorBuffer->multiSampleTexture = NULL;
+	renderbuffer->colorBuffer->multiSampleCount = 0;
 
 	if (multiSampleCount > 1)
 	{
 		renderbuffer->colorBuffer->multiSampleTexture = (VulkanTexture*) SDL_malloc(sizeof(VulkanTexture));
+		SDL_memset(renderbuffer->colorBuffer->multiSampleTexture, '\0', sizeof(VulkanTexture));
 
 		CreateTexture(
 			renderer,
@@ -6354,7 +6347,10 @@ FNA3D_Renderbuffer* VULKAN_GenDepthStencilRenderbuffer(
 	renderbuffer = (VulkanRenderbuffer*) SDL_malloc(sizeof(VulkanRenderbuffer));
 	renderbuffer->colorBuffer = NULL;
 	renderbuffer->depthBuffer = (VulkanDepthStencilBuffer*) SDL_malloc(sizeof(VulkanDepthStencilBuffer));
+
 	renderbuffer->depthBuffer->handle = (VulkanTexture*) SDL_malloc(sizeof(VulkanTexture));
+	SDL_memset(renderbuffer->depthBuffer->handle, '\0', sizeof(VulkanTexture));
+
 	if (
 		!CreateTexture(
 			renderer,
@@ -6443,6 +6439,7 @@ static void DestroyTexture(
 	FNAVulkanRenderer *renderer,
 	VulkanTexture *texture
 ) {
+	int32_t i;
 
 	renderer->vkFreeMemory(
 		renderer->logicalDevice,
@@ -6456,13 +6453,26 @@ static void DestroyTexture(
 		NULL
 	);
 
-	if (texture->rtView != texture->view)
+	if (texture->rtViews[0] != texture->view)
 	{
 		renderer->vkDestroyImageView(
 			renderer->logicalDevice,
-			texture->rtView,
+			texture->rtViews[0],
 			NULL
 		);
+	}
+
+	if (texture->rtViews[1] != NULL_IMAGE_VIEW)
+	{
+		/* Free all the other cube RT views */
+		for (i = 1; i < 6; i += 1)
+		{
+			renderer->vkDestroyImageView(
+				renderer->logicalDevice,
+				texture->rtViews[i],
+				NULL
+			);
+		}
 	}
 
 	renderer->vkDestroyImage(
@@ -8500,6 +8510,7 @@ static uint8_t CreateFauxBackbuffer(
 	VkImageAspectFlags depthAspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
 
 	renderer->fauxBackbufferColor.handle = (VulkanTexture*) SDL_malloc(sizeof(VulkanTexture));
+	SDL_memset(renderer->fauxBackbufferColor.handle, '\0', sizeof(VulkanTexture));
 
 	if (
 		!CreateTexture(
@@ -8552,6 +8563,7 @@ static uint8_t CreateFauxBackbuffer(
 	if (renderer->fauxBackbufferMultiSampleCount > 0)
 	{
 		renderer->fauxBackbufferMultiSampleColor = (VulkanTexture*) SDL_malloc(sizeof(VulkanTexture));
+		SDL_memset(renderer->fauxBackbufferMultiSampleColor, '\0', sizeof(VulkanTexture));
 
 		CreateTexture(
 			renderer,
@@ -8594,6 +8606,7 @@ static uint8_t CreateFauxBackbuffer(
 	if (renderer->fauxBackbufferDepthFormat != FNA3D_DEPTHFORMAT_NONE)
 	{
 		renderer->fauxBackbufferDepthStencil.handle = (VulkanTexture*) SDL_malloc(sizeof(VulkanTexture));
+		SDL_memset(renderer->fauxBackbufferDepthStencil.handle, '\0', sizeof(VulkanTexture));
 
 		vulkanDepthStencilFormat = XNAToVK_DepthFormat(renderer, renderer->fauxBackbufferDepthFormat);
 
