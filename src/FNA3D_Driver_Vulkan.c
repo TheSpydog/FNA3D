@@ -375,6 +375,8 @@ typedef struct FNAVulkanRenderer
 	VkBuffer *ldFragUniformBuffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceSize ldVertUniformOffsets[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceSize ldFragUniformOffsets[MAX_FRAMES_IN_FLIGHT];
+	VkDeviceSize ldVertUniformDynamicOffsets[MAX_FRAMES_IN_FLIGHT];
+	VkDeviceSize ldFragUniformDynamicOffsets[MAX_FRAMES_IN_FLIGHT];
 
 	/* needs to be dynamic because of swap chain count */
 	VkBuffer ldVertexBuffers[MAX_BOUND_VERTEX_BUFFERS * MAX_FRAMES_IN_FLIGHT];
@@ -1527,7 +1529,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET
 	};
 	VkBuffer *vUniform, *fUniform;
-	unsigned long long vOff, fOff, vSize, fSize; /* MojoShader type... */
+	unsigned long long vOff, fOff, vDynamicOff, fDynamicOff, vSize, fSize; /* MojoShader type... */
 	VkDescriptorSetLayout uniformBufferLayouts[2];
 	VkDescriptorSet uniformBufferDescriptorSets[2];
 	uint32_t uniformBufferLayoutCount = 0;
@@ -1543,6 +1545,8 @@ static void BindResources(FNAVulkanRenderer *renderer)
 	VkDescriptorImageInfo fragSamplerImageInfos[MAX_TEXTURE_SAMPLERS];
 	VkDescriptorBufferInfo vertUniformBufferInfo;
 	VkDescriptorBufferInfo fragUniformBufferInfo;
+	uint32_t dynamicOffsets[2];
+	uint32_t dynamicOffsetsCount = 0;
 	VkDescriptorSet descriptorSetsToBind[4];
 	uint32_t vertSamplerDescriptorsToAllocate = 0;
 	uint32_t fragSamplerDescriptorsToAllocate = 0;
@@ -1776,55 +1780,65 @@ static void BindResources(FNAVulkanRenderer *renderer)
 	MOJOSHADER_vkGetUniformBuffers(
 		(void**) &vUniform,
 		&vOff,
+		&vDynamicOff,
 		&vSize,
 		(void**) &fUniform,
 		&fOff,
+		&fDynamicOff,
 		&fSize
 	);
+
+	if (vUniform == NULL)
+	{
+		vUniform = &renderer->dummyVertUniformBuffer->handle;
+		vOff = 0;
+		vDynamicOff = 0;
+		vSize = renderer->dummyVertUniformBuffer->size;
+	}
 
 	/* we can't bind a NULL UBO so we have dummy data instead */
 	if (	renderer->currentVertUniformBufferDescriptorSet == NULL_DESC_SET ||
 			vUniform != renderer->ldVertUniformBuffers[renderer->currentFrame] ||
 			vOff != renderer->ldVertUniformOffsets[renderer->currentFrame]
 	) {
-		if (vUniform != NULL)
-		{
-			vertUniformBufferInfo.buffer = *vUniform;
-			vertUniformBufferInfo.offset = vOff;
-			vertUniformBufferInfo.range = vSize;
-		}
-		else
-		{
-			vertUniformBufferInfo.buffer = renderer->dummyVertUniformBuffer->handle;
-			vertUniformBufferInfo.offset = 0;
-			vertUniformBufferInfo.range = renderer->dummyVertUniformBuffer->size;
-		}
+		vertUniformBufferInfo.buffer = *vUniform;
+		vertUniformBufferInfo.offset = vOff;
+		vertUniformBufferInfo.range = vSize;
 
 		vertUniformBufferDescriptorSetNeedsUpdate = 1;
 		renderer->ldVertUniformBuffers[renderer->currentFrame] = vUniform;
 		renderer->ldVertUniformOffsets[renderer->currentFrame] = vOff;
+		renderer->ldVertUniformDynamicOffsets[renderer->currentFrame] = vDynamicOff;
+	}
+	else if (vDynamicOff != renderer->ldVertUniformDynamicOffsets[renderer->currentFrame])
+	{
+		renderer->ldVertUniformDynamicOffsets[renderer->currentFrame] = vDynamicOff;
 	}
 	
+	if (fUniform == NULL)
+	{
+		fUniform = &renderer->dummyFragUniformBuffer->handle;
+		fOff = 0;
+		fDynamicOff = 0;
+		fSize = renderer->dummyFragUniformBuffer->size;
+	}
+
 	if (	renderer->currentFragUniformBufferDescriptorSet == NULL_DESC_SET ||
 			fUniform != renderer->ldFragUniformBuffers[renderer->currentFrame] ||
 			fOff != renderer->ldFragUniformOffsets[renderer->currentFrame]
 	) {
-		if (fUniform != NULL)
-		{
-			fragUniformBufferInfo.buffer = *fUniform;
-			fragUniformBufferInfo.offset = fOff;
-			fragUniformBufferInfo.range = fSize;
-		}
-		else
-		{
-			fragUniformBufferInfo.buffer = renderer->dummyFragUniformBuffer->handle;
-			fragUniformBufferInfo.offset = 0;
-			fragUniformBufferInfo.range = renderer->dummyFragUniformBuffer->size;
-		}
+		fragUniformBufferInfo.buffer = *fUniform;
+		fragUniformBufferInfo.offset = fOff;
+		fragUniformBufferInfo.range = fSize;
 
 		fragUniformBufferDescriptorSetNeedsUpdate = 1;
 		renderer->ldFragUniformBuffers[renderer->currentFrame] = fUniform;
 		renderer->ldFragUniformOffsets[renderer->currentFrame] = fOff;
+		renderer->ldFragUniformDynamicOffsets[renderer->currentFrame] = fDynamicOff;
+	}
+	else if (fDynamicOff != renderer->ldFragUniformDynamicOffsets[renderer->currentFrame])
+	{
+		renderer->ldFragUniformDynamicOffsets[renderer->currentFrame] = fDynamicOff;
 	}
 
 	if (vertUniformBufferDescriptorSetNeedsUpdate)
@@ -1883,7 +1897,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		vertUniformBufferWrite.dstBinding = 0;
 		vertUniformBufferWrite.dstArrayElement = 0;
 		vertUniformBufferWrite.descriptorCount = 1;
-		vertUniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		vertUniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		vertUniformBufferWrite.pBufferInfo = &vertUniformBufferInfo;
 		vertUniformBufferWrite.pImageInfo = NULL;
 		vertUniformBufferWrite.pTexelBufferView = NULL;
@@ -1898,7 +1912,7 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		fragUniformBufferWrite.dstBinding = 0;
 		fragUniformBufferWrite.dstArrayElement = 0;
 		fragUniformBufferWrite.descriptorCount = 1;
-		fragUniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		fragUniformBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		fragUniformBufferWrite.pBufferInfo = &fragUniformBufferInfo;
 		fragUniformBufferWrite.pImageInfo = NULL;
 		fragUniformBufferWrite.pTexelBufferView = NULL;
@@ -1925,11 +1939,17 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		renderer->currentVertUniformBufferDescriptorSet = uniformBufferDescriptorSets[vertUniformBufferIndex];
 	}
 
+	dynamicOffsets[dynamicOffsetsCount] = (uint32_t) renderer->ldVertUniformDynamicOffsets[renderer->currentFrame];
+	dynamicOffsetsCount++;
+
 	/* frag ubo */
 	if (fragUniformBufferIndex != -1)
 	{
 		renderer->currentFragUniformBufferDescriptorSet = uniformBufferDescriptorSets[fragUniformBufferIndex];
 	}
+
+	dynamicOffsets[dynamicOffsetsCount] = (uint32_t) renderer->ldFragUniformDynamicOffsets[renderer->currentFrame];
+	dynamicOffsetsCount++;
 
 	renderer->vkUpdateDescriptorSets(
 		renderer->logicalDevice,
@@ -1951,8 +1971,8 @@ static void BindResources(FNAVulkanRenderer *renderer)
 		0,
 		4,
 		descriptorSetsToBind,
-		0,
-		NULL
+		dynamicOffsetsCount,
+		dynamicOffsets
 	);
 }
 
@@ -3748,8 +3768,10 @@ static void BeginRenderPass(
 
 	renderer->ldFragUniformBuffers[renderer->currentFrame] = NULL;
 	renderer->ldFragUniformOffsets[renderer->currentFrame] = 0;
+	renderer->ldFragUniformDynamicOffsets[renderer->currentFrame] = 0;
 	renderer->ldVertUniformBuffers[renderer->currentFrame] = NULL;
 	renderer->ldVertUniformOffsets[renderer->currentFrame] = 0;
+	renderer->ldVertUniformDynamicOffsets[renderer->currentFrame] = 0;
 	renderer->currentPipeline = NULL_PIPELINE;
 
 	swapChainOffset = MAX_BOUND_VERTEX_BUFFERS * renderer->currentFrame;
@@ -8120,7 +8142,7 @@ static uint8_t CreateDescriptorSetLayouts(
 	SDL_zero(layoutBinding);
 	layoutBinding.binding = 0;
 	layoutBinding.descriptorCount = 1;
-	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	layoutBinding.pImmutableSamplers = NULL;
 
@@ -8203,7 +8225,7 @@ static uint8_t CreateDescriptorSetLayouts(
 	SDL_zero(layoutBinding);
 	layoutBinding.binding = 0;
 	layoutBinding.descriptorCount = 1;
-	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	layoutBinding.pImmutableSamplers = NULL;
 
@@ -8479,6 +8501,8 @@ static uint8_t CreateMojoshaderContext(
 		(PFN_MOJOSHADER_vkGetInstanceProcAddr) vkGetInstanceProcAddr,
 		(PFN_MOJOSHADER_vkGetDeviceProcAddr) renderer->vkGetDeviceProcAddr,
 		renderer->queueFamilyIndices.graphicsFamily,
+		renderer->physicalDeviceProperties.properties.limits.maxUniformBufferRange,
+		renderer->physicalDeviceProperties.properties.limits.minUniformBufferOffsetAlignment,
 		NULL,
 		NULL,
 		NULL
@@ -8522,7 +8546,7 @@ static uint8_t CreateDescriptorPools(
 		);
 	
 
-		uniformBufferPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uniformBufferPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 		uniformBufferPoolSize.descriptorCount = UNIFORM_BUFFER_DESCRIPTOR_POOL_SIZE;
 
 		uniformBufferPoolInfo.poolSizeCount = 1;
