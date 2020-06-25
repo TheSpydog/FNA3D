@@ -1567,7 +1567,14 @@ static void BindResources(FNAVulkanRenderer *renderer)
 #endif
 		{		
 			vertSamplerImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			vertSamplerImageInfos[i].imageView = renderer->textures[vertArrayOffset + i]->view;
+			if (renderer->textures[vertArrayOffset + i] != &NullTexture)
+			{
+				vertSamplerImageInfos[i].imageView = renderer->textures[vertArrayOffset + i]->view;
+			}
+			else
+			{
+				vertSamplerImageInfos[i].imageView = renderer->dummyVertTexture->view;
+			}
 			vertSamplerImageInfos[i].sampler = renderer->samplers[vertArrayOffset + i];
 
 			vertexSamplerDescriptorSetNeedsUpdate = 1;
@@ -1605,7 +1612,14 @@ static void BindResources(FNAVulkanRenderer *renderer)
 #endif
 		{
 			fragSamplerImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			fragSamplerImageInfos[i].imageView = renderer->textures[fragArrayOffset + i]->view;
+			if (renderer->textures[fragArrayOffset + i] != &NullTexture)
+			{
+				fragSamplerImageInfos[i].imageView = renderer->textures[fragArrayOffset + i]->view;
+			}
+			else
+			{
+				fragSamplerImageInfos[i].imageView = renderer->dummyFragTexture->view;
+			}
 			fragSamplerImageInfos[i].sampler = renderer->samplers[fragArrayOffset + i];
 
 			fragSamplerDescriptorSetNeedsUpdate = 1;
