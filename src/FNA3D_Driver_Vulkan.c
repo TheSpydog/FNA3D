@@ -2564,7 +2564,7 @@ static void CreateImageMemoryBarrier(
 	FNAVulkanRenderer *renderer,
 	VulkanResourceAccessType nextAccess,
 	VkImageAspectFlags aspectMask,
-	uint32_t depth,
+	uint32_t layerCount,
 	uint32_t levelCount,
 	uint8_t discardContents,
 	VkImage image,
@@ -2592,7 +2592,7 @@ static void CreateImageMemoryBarrier(
 	memoryBarrier.image = image;
 	memoryBarrier.subresourceRange.aspectMask = aspectMask;
 	memoryBarrier.subresourceRange.baseArrayLayer = 0;
-	memoryBarrier.subresourceRange.layerCount = depth;
+	memoryBarrier.subresourceRange.layerCount = layerCount;
 	memoryBarrier.subresourceRange.baseMipLevel = 0;
 	memoryBarrier.subresourceRange.levelCount = levelCount;
 	memoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3521,7 +3521,7 @@ static VkFramebuffer FetchFramebuffer(
 static VkSampler FetchSamplerState(
 	FNAVulkanRenderer *renderer,
 	FNA3D_SamplerState *samplerState,
-	uint8_t hasMipmaps
+	uint32_t levelCount
 ) {
 	VkSamplerCreateInfo createInfo = {
 		VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO
@@ -3540,14 +3540,13 @@ static VkSampler FetchSamplerState(
 	createInfo.addressModeW = XNAToVK_SamplerAddressMode[samplerState->addressW];
 	createInfo.magFilter = XNAToVK_MagFilter[samplerState->filter];
 	createInfo.minFilter = XNAToVK_MinFilter[samplerState->filter];
-	if (hasMipmaps)
+	if (levelCount > 0)
 	{
 		createInfo.mipmapMode = XNAToVK_MipFilter[samplerState->filter];
 	}
 	createInfo.mipLodBias = samplerState->mipMapLevelOfDetailBias;
-	/* FIXME: double check that the lod range is correct */
 	createInfo.minLod = 0;
-	createInfo.maxLod = (float) samplerState->maxMipLevel;
+	createInfo.maxLod = SDL_min(levelCount, (float) samplerState->maxMipLevel);
 	createInfo.maxAnisotropy = samplerState->filter == FNA3D_TEXTUREFILTER_ANISOTROPIC ?
 		(float) SDL_max(1, samplerState->maxAnisotropy) :
 		1.0f;
@@ -3655,7 +3654,7 @@ static void BeginRenderPass(
 				renderer,
 				RESOURCE_ACCESS_COLOR_ATTACHMENT_READ_WRITE,
 				VK_IMAGE_ASPECT_COLOR_BIT,
-				1,
+				renderer->colorAttachments[i]->layerCount,
 				1,
 				0,
 				renderer->colorAttachments[i]->image,
@@ -3675,7 +3674,7 @@ static void BeginRenderPass(
 			renderer,
 			RESOURCE_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_WRITE,
 			depthAspectFlags,
-			1,
+			renderer->depthStencilAttachment->layerCount,
 			1,
 			0,
 			renderer->depthStencilAttachment->image,
@@ -4601,7 +4600,7 @@ void VULKAN_VerifySampler(
 	vkSamplerState = FetchSamplerState(
 		renderer,
 		sampler,
-		vulkanTexture->levelCount > 1
+		vulkanTexture->levelCount
 	);
 
 	if (vkSamplerState != renderer->samplers[textureIndex])
@@ -5078,7 +5077,7 @@ static void Stall(FNAVulkanRenderer *renderer)
 	VulkanBuffer *buf;
 
 	if (!renderer->commandBufferActive[renderer->currentFrame]) { return; }
-	
+
 	EndPass(renderer);
 
 	renderer->vkEndCommandBuffer(
@@ -5465,14 +5464,18 @@ void VULKAN_SetTextureData2D(
 	VulkanBuffer *stagingBuffer = vulkanTexture->stagingBuffer;
 	void *stagingData;
 	VkBufferImageCopy imageCopy;
+	uint32_t bufferRowLength, bufferImageHeight;
+
+	bufferRowLength = w;
+	bufferImageHeight = h;
 
 	/* DXT formats require w and h to be multiples of 4 */
 	if (	format == FNA3D_SURFACEFORMAT_DXT1 ||
 		format == FNA3D_SURFACEFORMAT_DXT3 ||
 		format == FNA3D_SURFACEFORMAT_DXT5	)
 	{
-		w = (w + 3) & ~3;
-		h = (h + 3) & ~3;
+		bufferRowLength = (w + 3) & ~3;
+		bufferImageHeight = (h + 3) & ~3;
 	}
 
 	VULKAN_BeginFrame(driverData);
@@ -5519,10 +5522,10 @@ void VULKAN_SetTextureData2D(
 	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	imageCopy.imageSubresource.baseArrayLayer = 0;
 	imageCopy.imageSubresource.layerCount = 1;
-	imageCopy.imageSubresource.mipLevel = 0;
+	imageCopy.imageSubresource.mipLevel = level;
 	imageCopy.bufferOffset = 0;
-	imageCopy.bufferRowLength = w;
-	imageCopy.bufferImageHeight = h;
+	imageCopy.bufferRowLength = bufferRowLength;
+	imageCopy.bufferImageHeight = bufferImageHeight;
 
 	renderer->vkCmdCopyBufferToImage(
 		renderer->commandBuffers[renderer->currentFrame],
@@ -5553,14 +5556,18 @@ void VULKAN_SetTextureData3D(
 	VulkanBuffer *stagingBuffer = vulkanTexture->stagingBuffer;
 	void *stagingData;
 	VkBufferImageCopy imageCopy;
+	uint32_t bufferRowLength, bufferImageHeight;
+
+	bufferRowLength = w;
+	bufferImageHeight = h;
 
 	/* DXT formats require w and h to be multiples of 4 */
 	if (	format == FNA3D_SURFACEFORMAT_DXT1 ||
 		format == FNA3D_SURFACEFORMAT_DXT3 ||
 		format == FNA3D_SURFACEFORMAT_DXT5	)
 	{
-		w = (w + 3) & ~3;
-		h = (h + 3) & ~3;
+		bufferRowLength = (w + 3) & ~3;
+		bufferImageHeight = (h + 3) & ~3;
 	}
 
 	VULKAN_BeginFrame(driverData);
@@ -5607,10 +5614,10 @@ void VULKAN_SetTextureData3D(
 	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	imageCopy.imageSubresource.baseArrayLayer = 0;
 	imageCopy.imageSubresource.layerCount = 1;
-	imageCopy.imageSubresource.mipLevel = 0;
+	imageCopy.imageSubresource.mipLevel = level;
 	imageCopy.bufferOffset = 0;
-	imageCopy.bufferRowLength = w;
-	imageCopy.bufferImageHeight = h;
+	imageCopy.bufferRowLength = bufferRowLength;
+	imageCopy.bufferImageHeight = bufferImageHeight;
 
 	renderer->vkCmdCopyBufferToImage(
 		renderer->commandBuffers[renderer->currentFrame],
@@ -5640,14 +5647,18 @@ void VULKAN_SetTextureDataCube(
 	VulkanBuffer *stagingBuffer = vulkanTexture->stagingBuffer;
 	void *stagingData;
 	VkBufferImageCopy imageCopy;
+	uint32_t bufferRowLength, bufferImageHeight;
+
+	bufferRowLength = w;
+	bufferImageHeight = h;
 
 	/* DXT formats require w and h to be multiples of 4 */
 	if (	format == FNA3D_SURFACEFORMAT_DXT1 ||
 		format == FNA3D_SURFACEFORMAT_DXT3 ||
 		format == FNA3D_SURFACEFORMAT_DXT5	)
 	{
-		w = (w + 3) & ~3;
-		h = (h + 3) & ~3;
+		bufferRowLength = (w + 3) & ~3;
+		bufferImageHeight = (h + 3) & ~3;
 	}
 
 	VULKAN_BeginFrame(driverData);
@@ -5694,10 +5705,10 @@ void VULKAN_SetTextureDataCube(
 	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	imageCopy.imageSubresource.baseArrayLayer = cubeMapFace;
 	imageCopy.imageSubresource.layerCount = 1;
-	imageCopy.imageSubresource.mipLevel = 0;
+	imageCopy.imageSubresource.mipLevel = level;
 	imageCopy.bufferOffset = 0;
-	imageCopy.bufferRowLength = w;
-	imageCopy.bufferImageHeight = h;
+	imageCopy.bufferRowLength = bufferRowLength;
+	imageCopy.bufferImageHeight = bufferImageHeight;
 
 	renderer->vkCmdCopyBufferToImage(
 		renderer->commandBuffers[renderer->currentFrame],
