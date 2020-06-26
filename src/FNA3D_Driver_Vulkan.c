@@ -6100,7 +6100,7 @@ void VULKAN_SetTextureDataYUV(
 	IncrementBufferOffset(renderer, stagingBuffer, dataLength, 1);
 }
 
-void VULKAN_GetTextureData2D(
+static void VULKAN_INTERNAL_GetTextureData(
 	FNA3D_Renderer *driverData,
 	FNA3D_Texture *texture,
 	FNA3D_SurfaceFormat format,
@@ -6109,6 +6109,7 @@ void VULKAN_GetTextureData2D(
 	int32_t w,
 	int32_t h,
 	int32_t level,
+	int32_t layer,
 	void* data,
 	int32_t dataLength
 ) {
@@ -6152,8 +6153,8 @@ void VULKAN_GetTextureData2D(
 	imageCopy.imageOffset.x = x;
 	imageCopy.imageOffset.y = y;
 	imageCopy.imageOffset.z = 0;
-	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; /* FIXME: What about depth/stencil? */
-	imageCopy.imageSubresource.baseArrayLayer = 0;
+	imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageCopy.imageSubresource.baseArrayLayer = layer;
 	imageCopy.imageSubresource.layerCount = 1;
 	imageCopy.imageSubresource.mipLevel = level;
 	imageCopy.bufferOffset = 0;
@@ -6213,6 +6214,33 @@ void VULKAN_GetTextureData2D(
 	);
 }
 
+void VULKAN_GetTextureData2D(
+	FNA3D_Renderer *driverData,
+	FNA3D_Texture *texture,
+	FNA3D_SurfaceFormat format,
+	int32_t x,
+	int32_t y,
+	int32_t w,
+	int32_t h,
+	int32_t level,
+	void* data,
+	int32_t dataLength
+) {
+	VULKAN_INTERNAL_GetTextureData(
+		driverData,
+		texture,
+		format,
+		x,
+		y,
+		w,
+		h,
+		level,
+		0,
+		data,
+		dataLength
+	);
+}
+
 void VULKAN_GetTextureData3D(
 	FNA3D_Renderer *driverData,
 	FNA3D_Texture *texture,
@@ -6245,7 +6273,19 @@ void VULKAN_GetTextureDataCube(
 	void* data,
 	int32_t dataLength
 ) {
-	/* TODO */
+	VULKAN_INTERNAL_GetTextureData(
+		driverData,
+		texture,
+		format,
+		x,
+		y,
+		w,
+		h,
+		level,
+		cubeMapFace,
+		data,
+		dataLength
+	);
 }
 
 /* Renderbuffers */
