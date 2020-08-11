@@ -2175,12 +2175,13 @@ static uint8_t VULKAN_INTERNAL_CreateDescriptorPoolAndSets(
 	uint32_t descriptorCountPerSet,
 	VkDescriptorType descriptorType,
 	VkDescriptorSetLayout descriptorSetLayout,
-	VkDescriptorPool descriptorPool,
+	VkDescriptorPool *pDescriptorPool,
 	VkDescriptorSet **descriptorSetArray /* pointer to pointer so we can realloc */
 ) {
 	VkResult vulkanResult;
 	uint32_t i;
 
+	VkDescriptorPool descriptorPool;
 	VkDescriptorPoolSize descriptorPoolSize;
 	VkDescriptorPoolCreateInfo descriptorPoolInfo =
 	{
@@ -2236,6 +2237,8 @@ static uint8_t VULKAN_INTERNAL_CreateDescriptorPoolAndSets(
 		SDL_stack_free(descriptorSetLayouts);
 		return 0;
 	}
+
+	*pDescriptorPool = descriptorPool;
 
 	SDL_stack_free(descriptorSetLayouts);
 	return 1;
@@ -2433,7 +2436,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 				i ? i : 1, /* descriptor count is 1 because of dummy binding */
 				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				renderer->vertexSamplerDescriptorSetLayouts[i],
-				renderer->vertexSamplerDescriptorPools[i],
+				&renderer->vertexSamplerDescriptorPools[i],
 				&renderer->vertexSamplerDescriptorSets[i]
 			);
 
@@ -2457,7 +2460,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 				i ? i : 1,
 				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				renderer->fragSamplerDescriptorSetLayouts[i],
-				renderer->fragSamplerDescriptorPools[i],
+				&renderer->fragSamplerDescriptorPools[i],
 				&renderer->fragSamplerDescriptorSets[i]
 			);
 
@@ -2479,7 +2482,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 			1,
 			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 			renderer->vertUniformBufferDescriptorSetLayout,
-			renderer->vertexUniformBufferDescriptorPool,
+			&renderer->vertexUniformBufferDescriptorPool,
 			&renderer->vertexUniformBufferDescriptorSets
 		);
 
@@ -2500,7 +2503,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 			1,
 			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 			renderer->fragUniformBufferDescriptorSetLayout,
-			renderer->fragUniformBufferDescriptorPool,
+			&renderer->fragUniformBufferDescriptorPool,
 			&renderer->fragUniformBufferDescriptorSets
 		);
 
@@ -6400,6 +6403,8 @@ static void VULKAN_DestroyDevice(FNA3D_Device *device)
 			renderer->vertexSamplerDescriptorPools[i],
 			NULL
 		);
+
+		SDL_free(renderer->vertexSamplerDescriptorSets[i]);
 	}
 
 	for (i = 0; i < MAX_TEXTURE_SAMPLERS; i += 1)
@@ -6409,6 +6414,8 @@ static void VULKAN_DestroyDevice(FNA3D_Device *device)
 			renderer->fragSamplerDescriptorPools[i],
 			NULL
 		);
+
+		SDL_free(renderer->fragSamplerDescriptorSets[i]);
 	}
 
 	renderer->vkDestroyDescriptorPool(
@@ -6417,12 +6424,15 @@ static void VULKAN_DestroyDevice(FNA3D_Device *device)
 		NULL
 	);
 
+	SDL_free(renderer->vertexUniformBufferDescriptorSets);
 
 	renderer->vkDestroyDescriptorPool(
 		renderer->logicalDevice,
 		renderer->fragUniformBufferDescriptorPool,
 		NULL
 	);
+
+	SDL_free(renderer->fragUniformBufferDescriptorSets);
 
 	for (i = 0; i < hmlenu(renderer->renderPassHashMap); i += 1)
 	{
@@ -6501,19 +6511,6 @@ static void VULKAN_DestroyDevice(FNA3D_Device *device)
 	SDL_free(renderer->buffersToDestroy);
 	SDL_free(renderer->effectsToDestroy);
 	SDL_free(renderer->texturesToDestroy);
-
-	for (i = 0; i < MAX_VERTEXTEXTURE_SAMPLERS; i++)
-	{
-		SDL_free(renderer->vertexSamplerDescriptorSets[i]);
-	}
-
-	for (i = 0; i < MAX_TEXTURE_SAMPLERS; i++)
-	{
-		SDL_free(renderer->fragSamplerDescriptorSets[i]);
-	}
-
-	SDL_free(renderer->vertexUniformBufferDescriptorSets);
-	SDL_free(renderer->fragUniformBufferDescriptorSets);
 
 	SDL_free(renderer);
 	SDL_free(device);
@@ -9588,7 +9585,7 @@ static FNA3D_Device* VULKAN_CreateDevice(
 			i ? i : 1,
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			renderer->vertexSamplerDescriptorSetLayouts[i],
-			renderer->vertexSamplerDescriptorPools[i],
+			&renderer->vertexSamplerDescriptorPools[i],
 			&renderer->vertexSamplerDescriptorSets[i]
 		);
 
@@ -9607,7 +9604,7 @@ static FNA3D_Device* VULKAN_CreateDevice(
 			i ? i : 1,
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			renderer->fragSamplerDescriptorSetLayouts[i],
-			renderer->fragSamplerDescriptorPools[i],
+			&renderer->fragSamplerDescriptorPools[i],
 			&renderer->fragSamplerDescriptorSets[i]
 		);
 
@@ -9624,7 +9621,7 @@ static FNA3D_Device* VULKAN_CreateDevice(
 		1,
 		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 		renderer->vertUniformBufferDescriptorSetLayout,
-		renderer->vertexUniformBufferDescriptorPool,
+		&renderer->vertexUniformBufferDescriptorPool,
 		&renderer->vertexUniformBufferDescriptorSets
 	);
 
@@ -9640,7 +9637,7 @@ static FNA3D_Device* VULKAN_CreateDevice(
 		1,
 		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 		renderer->fragUniformBufferDescriptorSetLayout,
-		renderer->fragUniformBufferDescriptorPool,
+		&renderer->fragUniformBufferDescriptorPool,
 		&renderer->fragUniformBufferDescriptorSets
 	);
 
