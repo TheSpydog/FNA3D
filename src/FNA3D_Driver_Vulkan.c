@@ -2575,7 +2575,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 		{
 			hash = VULKAN_INTERNAL_HashVertexSamplerDescriptorSetData(&renderer->vertexSamplerDescriptorSetDatas[i][j], i);
 
-			if (hmgeti(renderer->vertexSamplerDescriptorSetDataHashMap[i], hash) == -1)
+			if (hmgeti(renderer->vertexSamplerDescriptorSetDataHashMap[i], hash) < 0)
 			{
 				vertexSamplerDescriptorSetStructure = (VertexSamplerDescriptorSetDataHashMap) { hash, NULL_DESC_SET, renderer->vertexSamplerDescriptorSetDatas[i][j] };
 				hmputs(renderer->vertexSamplerDescriptorSetDataHashMap[i], vertexSamplerDescriptorSetStructure);
@@ -2592,7 +2592,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 		{
 			hash = VULKAN_INTERNAL_HashFragSamplerDescriptorSetData(&renderer->fragSamplerDescriptorSetDatas[i][j], i);
 
-			if (hmgeti(renderer->fragSamplerDescriptorSetDataHashMap[i], hash) == -1)
+			if (hmgeti(renderer->fragSamplerDescriptorSetDataHashMap[i], hash) < 0)
 			{
 				fragSamplerDescriptorSetStructure = (FragSamplerDescriptorSetDataHashMap) { hash, NULL_DESC_SET, renderer->fragSamplerDescriptorSetDatas[i][j] };
 				hmputs(renderer->fragSamplerDescriptorSetDataHashMap[i], fragSamplerDescriptorSetStructure);
@@ -2607,7 +2607,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 	{
 		hash = VULKAN_INTERNAL_HashVertexUniformDescriptorSetData(&renderer->vertexUniformDescriptorSetDatas[i]);
 
-		if (hmgeti(renderer->vertexUniformDescriptorSetDataHashMap, hash) == -1)
+		if (hmgeti(renderer->vertexUniformDescriptorSetDataHashMap, hash) < 0)
 		{
 			vertexUniformDescriptorSetStructure = (VertexUniformDescriptorSetDataHashMap) { hash, NULL_DESC_SET, renderer->vertexUniformDescriptorSetDatas[i] };
 			hmputs(renderer->vertexUniformDescriptorSetDataHashMap, vertexUniformDescriptorSetStructure);
@@ -2621,7 +2621,7 @@ static void VULKAN_INTERNAL_UpdateDescriptorSets(VulkanRenderer *renderer)
 	{
 		hash = VULKAN_INTERNAL_HashFragUniformDescriptorSetData(&renderer->fragUniformDescriptorSetDatas[i]);
 
-		if (hmgeti(renderer->fragUniformDescriptorSetDataHashMap, hash) == -1)
+		if (hmgeti(renderer->fragUniformDescriptorSetDataHashMap, hash) < 0)
 		{
 			fragUniformDescriptorSetStructure = (FragUniformDescriptorSetDataHashMap) { hash, NULL_DESC_SET, renderer->fragUniformDescriptorSetDatas[i] };
 			hmputs(renderer->fragUniformDescriptorSetDataHashMap, fragUniformDescriptorSetStructure);
