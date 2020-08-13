@@ -457,7 +457,11 @@ extern "C" {
 extern void stbds_rand_seed(size_t seed);
 
 // these are the hash functions used internally if you want to test them or use them for other purposes
+#ifdef FNA3D_CHANGE
 extern size_t stbds_hash_bytes(void *p, size_t len, size_t seed);
+#else
+extern uint64_t stbds_hash_bytes(void *p, size_t len, size_t seed);
+#endif
 extern size_t stbds_hash_string(char *str, size_t seed);
 
 // this is a simple string arena allocator, initialize with e.g. 'stbds_string_arena my_arena={0}'.
@@ -1081,7 +1085,11 @@ static size_t stbds_siphash_bytes(void *p, size_t len, size_t seed)
 #endif
 }
 
+#ifdef FNA3D_CHANGE
 size_t stbds_hash_bytes(void *p, size_t len, size_t seed)
+#else
+uint64_t stbds_hash_bytes(void *p, size_t len, size_t seed)
+#endif
 {
 #ifdef STBDS_SIPHASH_2_4
   return stbds_siphash_bytes(p,len,seed);
@@ -1144,7 +1152,9 @@ size_t stbds_hash_bytes(void *p, size_t len, size_t seed)
     //   15.58ms   //   14.79ms   //   15.52ms : 200,000 inserts creating 200K table with varying key spacing
 
     return (((size_t) hash << 16 << 16) | hash) ^ seed;
-  } else if (len == 8 && sizeof(size_t) == 8) {
+  }
+#ifdef FNA3D_CHANGE
+  else if (len == 8 && sizeof(size_t) == 8) {
     size_t hash = d[0] | (d[1] << 8) | (d[2] << 16) | (d[3] << 24);
     hash |= (size_t) (d[4] | (d[5] << 8) | (d[6] << 16) | (d[7] << 24)) << 16 << 16; // avoid warning if size_t == 4
     hash ^= seed;
@@ -1158,7 +1168,12 @@ size_t stbds_hash_bytes(void *p, size_t len, size_t seed)
     hash += (hash << 31);
     hash = (~hash) + (hash << 18);
     return hash;
-  } else {
+#else
+  else if (len == 8) {
+    return *((uint64_t*) p);
+  }
+#endif
+  else {
     return stbds_siphash_bytes(p,len,seed);
   }
 #endif
